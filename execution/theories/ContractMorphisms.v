@@ -8,6 +8,7 @@ From Coq Require Import Bool.
 From Coq Require Import FunctionalExtensionality.
 From Coq Require Import Permutation.
 From Coq Require Import RelationClasses.
+From Coq Require Import Classes.Equivalence.
 From ConCert.Execution Require Import Blockchain.
 From ConCert.Execution Require Import ChainedList.
 From ConCert.Execution Require Import ContractCommon.
@@ -528,6 +529,8 @@ Definition contract_surjects : Prop :=
 
 End Surjections.
 
+(** TODO EXACTNESS *)
+
 
 (** The definition of contract morphisms is fairly general, and 
     somewhat difficult to work with. As we proceed, we will use 
@@ -912,6 +915,30 @@ Section ContractTrace.
 
     Definition ContractTrace (C : Contract Setup Msg State Error) := 
         ChainedList State (ContractStep C).
+
+    (* TODO some notion of reachability which involves an `init_state` to replace 
+        into left_cm_induction *)
+
+    Definition cstate_reachable (C : Contract Setup Msg State Error) (cstate : State) : Prop := 
+        exists init_cstate,
+        (* init_cstate is a valid initial cstate *)
+        (exists init_chain init_ctx init_setup, 
+        init C init_chain init_ctx init_setup = Ok init_cstate) /\
+        (* with a trace to cstate *)
+        inhabited (ContractTrace C init_cstate cstate).
+
+    Lemma inhab_trace_trans (C : Contract Setup Msg State Error) : 
+    forall from mid to, 
+        (ContractStep C mid to) -> 
+        inhabited (ContractTrace C from mid) -> 
+        inhabited (ContractTrace C from to).
+    Proof.
+        intros from mid to step.
+        apply inhabited_covariant.
+        intro mid_t.
+        apply (snoc mid_t step).
+    Qed.
+
 End ContractTrace.
 
 
@@ -924,6 +951,10 @@ Context { Setup Setup' Msg Msg' State State' Error Error' : Type }
 (* - the relationship always exists with some parallel C' 
         - rounding down/Uranium example. *)
 
+(* TODO a notion of it *corresponding* *)
+
+
+(* f : C -> C' *)
 Theorem lef_cm_induction : 
     (* forall simple morphism and reachable bstate, *)
     forall (f : simple_cm C C') bstate caddr (trace : ChainTrace empty_state bstate),
@@ -932,10 +963,9 @@ Theorem lef_cm_induction :
     exists (cstate : State), 
     contract_state bstate caddr = Some cstate /\
     (* every reachable cstate of C corresponds to a reachable cstate' of C' on some chain ... *)
-    (exists (init_cstate' cstate' : State') (ctrace : ContractTrace C' init_cstate' cstate'),
+    (exists (cstate' : State'),
     (* 1. init_cstate' is a valid initial cstate of C'  *)
-    (exists init_chain init_ctx init_setup, init C' init_chain init_ctx init_setup = 
-        Ok init_cstate') /\
+    cstate_reachable C' cstate' /\
     (* 2. cstate and cstate' are related by state_morph. *)
     cstate' = state_morph C C' f cstate).
 Proof.
@@ -953,49 +983,70 @@ Proof.
     contract_induction; auto.
     (* deployment *)
     -   intros.
-        exists (state_morph result), (state_morph result).
-        exists clnil.
+        exists (state_morph result).
+        cbn.
         split; auto.
+        unfold cstate_reachable.
+        exists (state_morph result).
+        split.
+        2:{ constructor.
+            exact clnil. }
         exists chain, ctx, (setup_morph setup).
         rewrite <- (init_coherence chain ctx setup).
         destruct (init C chain ctx setup); 
         now try inversion init_some.
     (* non-recursive call *)
     -   intros.
-        destruct IH as [init_state' [cstate_prev' [prev_trace [init_correct IH]]]].
-        cbn in IH.
-        exists init_state', (state_morph new_state).
-        assert (ContractStep C' cstate_prev' (state_morph new_state))
-            as cstep.
-        {   set (seq_new_state := state_morph new_state).
-            set (seq_msg := option_map msg_morph msg).
-            apply (build_contract_step C' cstate_prev' seq_new_state chain ctx seq_msg new_acts).
-            (* now apply coherence *)
-            rewrite IH.
-            unfold seq_msg.
-            rewrite <- (recv_coherence chain ctx prev_state msg).
-            destruct (receive C chain ctx prev_state msg) eqn:H_rec;
-            now try inversion receive_some. }
-        exists (snoc prev_trace cstep).
+        destruct IH as [cstate_prev' [cstate_reach cstate_rel]].
+        destruct cstate_reach as [init_state' [init_success prev_trace]].
+        destruct init_success as [init_c [init_ctx [init_s init_some']]].
+        simpl in cstate_rel.
+        exists (state_morph new_state).
         split; auto.
+        (* reprove reachability *)
+        unfold cstate_reachable.
+        exists (init_state').
+        split.
+        +   now exists init_c, init_ctx, init_s.
+        +   assert (ContractStep C' cstate_prev' (state_morph new_state))
+                as cstep.
+            {   set (seq_new_state := state_morph new_state).
+                set (seq_msg := option_map msg_morph msg).
+                apply (build_contract_step C' cstate_prev' seq_new_state chain ctx seq_msg new_acts).
+                (* now apply coherence *)
+                rewrite cstate_rel.
+                unfold seq_msg.
+                rewrite <- (recv_coherence chain ctx prev_state msg).
+                destruct (receive C chain ctx prev_state msg) eqn:H_rec;
+                now try inversion receive_some. }
+            apply (inhab_trace_trans C' init_state' cstate_prev' (state_morph new_state)); 
+            auto.
     (* recursive call *)
     -   intros.
-        destruct IH as [init_state' [cstate_prev' [prev_trace [init_correct IH]]]].
-        cbn in IH.
-        exists init_state', (state_morph new_state).
-        assert (ContractStep C' cstate_prev' (state_morph new_state))
-            as cstep.
-        {   set (seq_new_state := state_morph new_state).
-            set (seq_msg := option_map msg_morph msg).
-            apply (build_contract_step C' cstate_prev' seq_new_state chain ctx seq_msg new_acts).
-            (* now apply coherence *)
-            rewrite IH.
-            unfold seq_msg.
-            rewrite <- (recv_coherence chain ctx prev_state msg).
-            destruct (receive C chain ctx prev_state msg) eqn:H_rec;
-            now try inversion receive_some. }
-        exists (snoc prev_trace cstep).
+        destruct IH as [cstate_prev' [cstate_reach cstate_rel]].
+        destruct cstate_reach as [init_state' [init_success prev_trace]].
+        destruct init_success as [init_c [init_ctx [init_s init_some']]].
+        simpl in cstate_rel.
+        exists (state_morph new_state).
         split; auto.
+        (* reprove reachability *)
+        unfold cstate_reachable.
+        exists (init_state').
+        split.
+        +   now exists init_c, init_ctx, init_s.
+        +   assert (ContractStep C' cstate_prev' (state_morph new_state))
+                as cstep.
+            {   set (seq_new_state := state_morph new_state).
+                set (seq_msg := option_map msg_morph msg).
+                apply (build_contract_step C' cstate_prev' seq_new_state chain ctx seq_msg new_acts).
+                (* now apply coherence *)
+                rewrite cstate_rel.
+                unfold seq_msg.
+                rewrite <- (recv_coherence chain ctx prev_state msg).
+                destruct (receive C chain ctx prev_state msg) eqn:H_rec;
+                now try inversion receive_some. }
+            apply (inhab_trace_trans C' init_state' cstate_prev' (state_morph new_state)); 
+            auto.
     (* solve facts *)
     -   intros.
         solve_facts.
@@ -1007,6 +1058,8 @@ Qed.
         - upgradeability example
         - backwards compatibility (inj)
         - bug fix (surj) *)
+
+(* f : C -> C' *)
 Theorem right_cm_induction:
     forall (from to : State) (f : simple_cm C C'),
     ContractTrace C from to ->
