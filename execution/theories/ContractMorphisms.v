@@ -677,8 +677,6 @@ Definition simple_cm_to_cm (f : simple_cm C1 C2) : ContractMorphism C1 C2 :=
 
 (* a predicate to indicate that a contract morphism is simple *)
 Definition is_simple_cm
-    {C1 : Contract Setup Msg State Error} 
-    {C2 : Contract Setup' Msg' State' Error'} 
     (f : ContractMorphism C1 C2) : Prop := 
     exists 
     (* the components of f *)
@@ -697,8 +695,6 @@ Definition is_simple_cm
 
 (* a trivial lemma for convenience *)
 Lemma simple_cm_is_simple
-    {C1 : Contract Setup Msg State Error} 
-    {C2 : Contract Setup' Msg' State' Error'}
     (* the components of f *)
     {msg_morph   : Msg   -> Msg'}
     {setup_morph : Setup -> Setup'}
