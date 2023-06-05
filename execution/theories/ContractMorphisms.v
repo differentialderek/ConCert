@@ -570,12 +570,11 @@ Record simple_cm
         result_functor (fun '(st, l) => (state_morph st, l)) error_morph (receive C c ctx st op_msg) = 
         receive C' c ctx (state_morph st) (option_map msg_morph op_msg) ; }.
 
+Context {C1 : Contract Setup Msg State Error} {C2 : Contract Setup' Msg' State' Error'}.
 
 (** We explicitly construct the components *)
 (* the init component *)
 Lemma init_commutes_simple 
-    {C1 : Contract Setup Msg State Error} 
-    {C2 : Contract Setup' Msg' State' Error'}
     (* the components of f *)
     (setup_morph : Setup -> Setup')
     (state_morph : State -> State')
@@ -596,8 +595,6 @@ Proof.
 Qed.
 
 Definition simple_cm_init 
-    {C1 : Contract Setup Msg State Error} 
-    {C2 : Contract Setup' Msg' State' Error'}
     (* the components of f *)
     (setup_morph : Setup -> Setup')
     (state_morph : State -> State')
@@ -614,8 +611,6 @@ Definition simple_cm_init
 
 (* the recv component *)
 Lemma recv_commutes_simple 
-    {C1 : Contract Setup Msg State Error} 
-    {C2 : Contract Setup' Msg' State' Error'}
     (* the components of f *)
     (msg_morph   : Msg   -> Msg')
     (state_morph : State -> State')
@@ -640,8 +635,6 @@ Proof.
 Qed.
 
 Definition simple_cm_recv 
-    {C1 : Contract Setup Msg State Error} 
-    {C2 : Contract Setup' Msg' State' Error'}
     (* the components of f *)
     (msg_morph   : Msg   -> Msg')
     (state_morph : State -> State')
@@ -661,8 +654,6 @@ Definition simple_cm_recv
 
 (* the simple contract morphism *)
 Definition simple_cm_construct
-    {C1 : Contract Setup Msg State Error} 
-    {C2 : Contract Setup' Msg' State' Error'}
     (* the components of f *)
     (msg_morph   : Msg   -> Msg')
     (setup_morph : Setup -> Setup')
@@ -679,6 +670,10 @@ Definition simple_cm_construct
         cm_init := simple_cm_init setup_morph state_morph error_morph init_coherence ;
         cm_recv := simple_cm_recv msg_morph   state_morph error_morph recv_coherence ;
     |}.
+
+Definition simple_cm_to_cm (f : simple_cm C1 C2) : ContractMorphism C1 C2 := 
+    simple_cm_construct (msg_morph C1 C2 f) (setup_morph C1 C2 f) (state_morph C1 C2 f) 
+        (error_morph C1 C2 f) (init_coherence C1 C2 f) (recv_coherence C1 C2 f).
 
 (* a predicate to indicate that a contract morphism is simple *)
 Definition is_simple_cm
@@ -951,18 +946,18 @@ Context { Setup Setup' Msg Msg' State State' Error Error' : Type }
 (* - the relationship always exists with some parallel C' 
         - rounding down/Uranium example. *)
 
-(* TODO a notion of it *corresponding* *)
 
 
+(** TODO a notion of it *corresponding* *)
 (* f : C -> C' *)
-Theorem lef_cm_induction : 
+Theorem left_cm_induction : 
     (* forall simple morphism and reachable bstate, *)
     forall (f : simple_cm C C') bstate caddr (trace : ChainTrace empty_state bstate),
     (* where C is at caddr with state cstate, *)
     env_contracts bstate caddr = Some (C : WeakContract) -> 
     exists (cstate : State), 
     contract_state bstate caddr = Some cstate /\
-    (* every reachable cstate of C corresponds to a reachable cstate' of C' on some chain ... *)
+    (* every reachable cstate of C corresponds to a contract-reachable cstate' of C' ... *)
     (exists (cstate' : State'),
     (* 1. init_cstate' is a valid initial cstate of C'  *)
     cstate_reachable C' cstate' /\
@@ -1059,6 +1054,8 @@ Qed.
         - backwards compatibility (inj)
         - bug fix (surj) *)
 
+
+(** TODO a notion of grabbing an init? or do you just do that if you can? *)
 (* f : C -> C' *)
 Theorem right_cm_induction:
     forall (from to : State) (f : simple_cm C C'),
