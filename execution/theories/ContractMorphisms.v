@@ -33,21 +33,23 @@ Context `{Serializable Msg1} `{Serializable Setup1} `{Serializable State1} `{Ser
 (** The definition *)
 Record ContractMorphism 
     (C1 : Contract Setup1 Msg1 State1 Error1) 
-    (C2 : Contract Setup2 Msg2 State2 Error2) := {
-    (* the components of a morphism f *)
-    msg_morph : Msg1 -> Msg2 ;
-    setup_morph : Setup1 -> Setup2 ;
-    state_morph : State1 -> State2 ;
-    error_morph : Error1 -> Error2 ;
-    (* coherence conditions *)
-    init_coherence : forall c ctx s, 
-        result_functor state_morph error_morph 
-            (init C1 c ctx s) = 
-        init C2 c ctx (setup_morph s) ;
-    recv_coherence : forall c ctx st op_msg, 
-        result_functor (fun '(st, l) => (state_morph st, l)) error_morph 
-            (receive C1 c ctx st op_msg) = 
-        receive C2 c ctx (state_morph st) (option_map msg_morph op_msg) ; }.
+    (C2 : Contract Setup2 Msg2 State2 Error2) := 
+    build_contract_morphism {
+        (* the components of a morphism f *)
+        msg_morph : Msg1 -> Msg2 ;
+        setup_morph : Setup1 -> Setup2 ;
+        state_morph : State1 -> State2 ;
+        error_morph : Error1 -> Error2 ;
+        (* coherence conditions *)
+        init_coherence : forall c ctx s, 
+            result_functor state_morph error_morph 
+                (init C1 c ctx s) = 
+            init C2 c ctx (setup_morph s) ;
+        recv_coherence : forall c ctx st op_msg, 
+            result_functor (fun '(st, l) => (state_morph st, l)) error_morph 
+                (receive C1 c ctx st op_msg) = 
+            receive C2 c ctx (state_morph st) (option_map msg_morph op_msg) ; 
+}.
 
 End MorphismDefinition.
 
@@ -596,8 +598,7 @@ Qed.
 End MorphismInduction.
 
 
-(** Equivalences of Contracts : an equivalence on just reachable states *)
-Section ContractEquiv.
+Section ContractTraceMorphism.
 Context `{Serializable Msg1} `{Serializable Setup1} `{Serializable State1} `{Serializable Error1}
         `{Serializable Msg2} `{Serializable Setup2} `{Serializable State2} `{Serializable Error2}.
 
@@ -626,7 +627,26 @@ Record ContractTraceIsomorphism
     (* todo *)
     }.
 
+
 Context {C1 : Contract Setup1 Msg1 State1 Error1} 
+        {C2 : Contract Setup2 Msg2 State2 Error2}.
+
+(** Isomorphism -> Equivalence *)
+Proposition ciso_to_ctiso (f : ContractMorphism C1 C2) (g : ContractMorphism C2 C1) :
+    is_iso_cm f g -> ContractTraceIsomorphism C1 C2.
+Admitted.
+
+(* LIFTING THEOREM?! *)
+
+End ContractTraceMorphism.
+
+
+
+(** Equivalences of Contracts : isomorphic behavior, just reachable states *)
+Section ContractEquiv.
+Context `{Serializable Msg1} `{Serializable Setup1} `{Serializable State1} `{Serializable Error1}
+        `{Serializable Msg2} `{Serializable Setup2} `{Serializable State2} `{Serializable Error2}
+        {C1 : Contract Setup1 Msg1 State1 Error1} 
         {C2 : Contract Setup2 Msg2 State2 Error2}.
 
 (** Weak Equivalence : an equivalence on reachable states *)
