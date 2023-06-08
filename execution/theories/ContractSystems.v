@@ -10,7 +10,105 @@ From ConCert.Execution Require Import Serializable.
 From ConCert.Execution Require Import ResultMonad.
 From ConCert.Execution Require Import ContractMorphisms.
 
+
+(** TODO:
+    - A system of contracts 
+        - Notion of shared state
+        - Morphisms of these things 
+        - Isomorphisms/Equivalences of these things 
+    - A *multi-chain system* of contracts
+        - repeat ^^
+    - Maybe some contract operations plus nil contract .. ? Maybe
+*)
+
 Axiom todo : string -> forall {A}, A.
+
+(** Notation for a system of contracts *)
+Section ContractSystem.
+
+(** On one single chain *)
+Definition CSys (B : ChainBase) : Type := list (@WeakContract B).
+(* plus contract preimages? *)
+
+
+(** Multi-chain *)
+Definition CSysS (B1 B2 : ChainBase) : Type := list (@WeakContract B1) * list (@WeakContract B2).
+
+
+(** Systems should have an interface:
+    - a (collective) message type 
+    - collective storage 
+    - collective balance (this might be tricky ...)
+    - a collective trace
+*)
+
+End ContractSystem.
+
+
+(** Morphisms of Systems of Contracts *)
+Section SystemMorphism.
+
+
+End SystemMorphism.
+
+
+(** Equivalences of Systems of Contracts *)
+Section SysEquiv.
+
+(* first strong equiv *)
+
+(** Some notion of **shared trace** 
+    - their balances 
+    - their states 
+    - incoming/outgoing messages 
+
+*)
+
+(** Weak equivalences (just reachable) *)
+
+End SysEquiv.
+
+
+
+(** Multi-chain Contracts and Systems of Multi-chain Contracts *)
+Section MultiChainContract.
+Context {B1 B2: ChainBase}
+    { Setup1 Setup2 Msg1 Msg2 State1 State2 Error1 Error2 : Type }
+    `{m1_ser : Serializable Msg1} `{s1_ser : Serializable Setup1} 
+    `{st1_ser : Serializable State1} `{er1_ser : Serializable Error1}
+    `{m2_ser : Serializable Msg2} `{s2_ser : Serializable Setup2} 
+    `{st2_ser : Serializable State2} `{er2_ser : Serializable Error2}.
+
+(* A multi-chain contract *)
+Definition MContract : Type := 
+    (@Contract B1 Setup1 Msg1 State1 Error1 s1_ser m1_ser st1_ser er1_ser + 
+     @Contract B2 Setup2 Msg2 State2 Error2 s2_ser m2_ser st2_ser er2_ser)%type.
+
+
+(* A system of multi-chain contracts *)
+
+
+(* Equivalence (both strong and weak) of multi-chain contracts *)
+
+
+
+(* should all be a straightforward generalization of what's above *)
+
+
+
+End MultiChainContract.
+
+
+
+
+
+
+
+
+
+
+
+
 
 Definition pair_fun {S T S' T' : Type} 
     (f : S -> S') (g : T -> T') (x : S * T) : S' * T' :=
@@ -442,78 +540,3 @@ End ContractTransformations.
 
 
 
-
-(** Notation for a system of contracts *)
-Section ContractSystem.
-
-(** On one single chain *)
-Definition CSys (B : ChainBase) : Type := list (@WeakContract B).
-(* plus contract preimages? *)
-
-
-(** Multi-chain *)
-Definition CSysS (B1 B2 : ChainBase) : Type := list (@WeakContract B1) * list (@WeakContract B2).
-
-
-(** Systems should have an interface:
-    - a (collective) message type 
-    - collective storage 
-    - collective balance (this might be tricky ...)
-    - a collective trace
-*)
-
-End ContractSystem.
-
-
-(** Morphisms of Systems of Contracts *)
-Section SystemMorphism.
-
-
-End SystemMorphism.
-
-
-(** Equivalences of Systems of Contracts *)
-Section SysEquiv.
-
-(* first strong equiv *)
-
-(** Some notion of **shared trace** 
-    - their balances 
-    - their states 
-    - incoming/outgoing messages 
-
-*)
-
-(** Weak equivalences (just reachable) *)
-
-End SysEquiv.
-
-
-
-(** Multi-chain Contracts and Systems of Multi-chain Contracts *)
-Section MultiChainContract.
-Context {B1 B2: ChainBase}
-    { Setup1 Setup2 Msg1 Msg2 State1 State2 Error1 Error2 : Type }
-    `{m1_ser : Serializable Msg1} `{s1_ser : Serializable Setup1} 
-    `{st1_ser : Serializable State1} `{er1_ser : Serializable Error1}
-    `{m2_ser : Serializable Msg2} `{s2_ser : Serializable Setup2} 
-    `{st2_ser : Serializable State2} `{er2_ser : Serializable Error2}.
-
-(* A multi-chain contract *)
-Definition MContract : Type := 
-    (@Contract B1 Setup1 Msg1 State1 Error1 s1_ser m1_ser st1_ser er1_ser + 
-     @Contract B2 Setup2 Msg2 State2 Error2 s2_ser m2_ser st2_ser er2_ser)%type.
-
-
-(* A system of multi-chain contracts *)
-
-
-(* Equivalence (both strong and weak) of multi-chain contracts *)
-
-
-
-(* should all be a straightforward generalization of what's above *)
-
-
-
-End MultiChainContract.

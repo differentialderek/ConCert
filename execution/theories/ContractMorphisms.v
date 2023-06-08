@@ -1,4 +1,16 @@
-(* A Description of Morphisms of Contracts *)
+(** Contract Morphisms:
+    A contract morphism f : C1 -> C2 is a formal, structural relationship between contracts C1 and C2 
+    It consists of:
+    1. functions between contract types:
+        setup_morph : Setup1 -> Setup1
+        msg_morph   : Msg1   -> Msg1
+        state_morph : State1 -> State1
+        error_morph : Error1 -> Error1
+    2. proofs of coherence:
+       using the functions, we can transform inputs to C1 into inputs to C2,
+       and outputs of C1 into outputs of C2.
+
+*)
 
 From Coq Require Import Basics.
 From Coq Require Import ProofIrrelevance.
@@ -27,8 +39,8 @@ Definition result_functor {T T' E E' : Type} : (T -> T') -> (E -> E') -> result 
 
 (** First, a definition of a Contract Morphism, which is a function between contracts *)
 Section MorphismDefinition.
-Context `{Serializable Msg1} `{Serializable Setup1} `{Serializable State1} `{Serializable Error1}
-        `{Serializable Msg2} `{Serializable Setup2} `{Serializable State2} `{Serializable Error2}.
+Context `{Serializable Setup1} `{Serializable Msg1} `{Serializable State1} `{Serializable Error1}
+        `{Serializable Setup2} `{Serializable Msg2} `{Serializable State2} `{Serializable Error2}.
 
 (** The definition *)
 Record ContractMorphism 
@@ -36,8 +48,8 @@ Record ContractMorphism
     (C2 : Contract Setup2 Msg2 State2 Error2) := 
     build_contract_morphism {
         (* the components of a morphism f *)
-        msg_morph : Msg1 -> Msg2 ;
         setup_morph : Setup1 -> Setup2 ;
+        msg_morph   : Msg1   -> Msg2   ;
         state_morph : State1 -> State2 ;
         error_morph : Error1 -> Error2 ;
         (* coherence conditions *)
@@ -52,6 +64,47 @@ Record ContractMorphism
 }.
 
 End MorphismDefinition.
+
+Section MorphismUtils.
+Context `{Serializable Setup1} `{Serializable Msg1} `{Serializable State1} `{Serializable Error1}
+        `{Serializable Setup2} `{Serializable Msg2} `{Serializable State2} `{Serializable Error2}
+        {C1 : Contract Setup1 Msg1 State1 Error1} 
+        {C2 : Contract Setup2 Msg2 State2 Error2}.
+
+Definition init_coherence_prop  
+    (setup_morph : Setup1 -> Setup2)
+    (state_morph : State1 -> State2)
+    (error_morph : Error1 -> Error2) :=
+    forall c ctx s, 
+    result_functor state_morph error_morph 
+        (init C1 c ctx s) = 
+    init C2 c ctx (setup_morph s).
+
+Definition recv_coherence_prop
+    (msg_morph : Msg1 -> Msg2)
+    (state_morph : State1 -> State2)
+    (error_morph : Error1 -> Error2) :=
+    forall c ctx st op_msg, 
+    result_functor (fun '(st, l) => (state_morph st, l)) error_morph 
+        (receive C1 c ctx st op_msg) = 
+    receive C2 c ctx (state_morph st) (option_map msg_morph op_msg).
+
+
+Definition coherence_prop 
+    (setup_morph : Setup1 -> Setup2)
+    (msg_morph   : Msg1   -> Msg2)
+    (state_morph : State1 -> State2)
+    (error_morph : Error1 -> Error2) :=
+    (forall c ctx s, 
+    result_functor state_morph error_morph 
+        (init C1 c ctx s) = 
+    init C2 c ctx (setup_morph s)) /\ 
+    (forall c ctx st op_msg, 
+    result_functor (fun '(st, l) => (state_morph st, l)) error_morph 
+        (receive C1 c ctx st op_msg) = 
+    receive C2 c ctx (state_morph st) (option_map msg_morph op_msg)).
+
+End MorphismUtils.
 
 
 (** The Identity Contract Morphism *)
@@ -98,8 +151,8 @@ End IdentityMorphism.
 
 (** Deriving equality of Contract Morphisms *)
 Section EqualityOfMorphisms.
-Context `{Serializable Msg1} `{Serializable Setup1} `{Serializable State1} `{Serializable Error1}
-        `{Serializable Msg2} `{Serializable Setup2} `{Serializable State2} `{Serializable Error2}
+Context `{Serializable Setup1} `{Serializable Msg1} `{Serializable State1} `{Serializable Error1}
+        `{Serializable Setup2} `{Serializable Msg2} `{Serializable State2} `{Serializable Error2}
         {C1 : Contract Setup1 Msg1 State1 Error1} 
         {C2 : Contract Setup2 Msg2 State2 Error2}.
 
@@ -127,9 +180,9 @@ End EqualityOfMorphisms.
 
 (** An explicit construction of the composition of two morphisms *)
 Section MorphismComposition.
-Context `{Serializable Msg1} `{Serializable Setup1} `{Serializable State1} `{Serializable Error1}
-        `{Serializable Msg2} `{Serializable Setup2} `{Serializable State2} `{Serializable Error2}
-        `{Serializable Msg3} `{Serializable Setup3} `{Serializable State3} `{Serializable Error3}
+Context `{Serializable Setup1} `{Serializable Msg1} `{Serializable State1} `{Serializable Error1}
+        `{Serializable Setup2} `{Serializable Msg2} `{Serializable State2} `{Serializable Error2}
+        `{Serializable Setup3} `{Serializable Msg3} `{Serializable State3} `{Serializable Error3}
         { C1 : Contract Setup1 Msg1 State1 Error1 } 
         { C2 : Contract Setup2 Msg2 State2 Error2 }
         { C3 : Contract Setup3 Msg3 State3 Error3 }.
@@ -177,7 +230,7 @@ Proof.
 Qed.
 
 (** Composition *)
-Definition composition_cm (g : ContractMorphism C2 C3) (f : ContractMorphism C1 C2) : 
+Definition compose_cm (g : ContractMorphism C2 C3) (f : ContractMorphism C1 C2) : 
     ContractMorphism C1 C3 := {| 
     (* the components *)
     msg_morph   := compose (msg_morph   C2 C3 g) (msg_morph   C1 C2 f) ; 
@@ -192,35 +245,35 @@ Definition composition_cm (g : ContractMorphism C2 C3) (f : ContractMorphism C1 
 End MorphismComposition.
 
 Section MorphismCompositionResults.
-Context `{Serializable Msg1} `{Serializable Setup1} `{Serializable State1} `{Serializable Error1}
-        `{Serializable Msg2} `{Serializable Setup2} `{Serializable State2} `{Serializable Error2}
-        `{Serializable Msg3} `{Serializable Setup3} `{Serializable State3} `{Serializable Error3}
-        `{Serializable Msg4} `{Serializable Setup4} `{Serializable State4} `{Serializable Error4}
+Context `{Serializable Setup1} `{Serializable Msg1} `{Serializable State1} `{Serializable Error1}
+        `{Serializable Setup2} `{Serializable Msg2} `{Serializable State2} `{Serializable Error2}
+        `{Serializable Setup3} `{Serializable Msg3} `{Serializable State3} `{Serializable Error3}
+        `{Serializable Setup4} `{Serializable Msg4} `{Serializable State4} `{Serializable Error4}
         { C1 : Contract Setup1 Msg1 State1 Error1 } 
         { C2 : Contract Setup2 Msg2 State2 Error2 }
         { C3 : Contract Setup3 Msg3 State3 Error3 }
         { C4 : Contract Setup4 Msg4 State4 Error4 }.
 
 (** Composition with the Identity morphism is trivial *)
-Proposition composition_id_cm_left (f : ContractMorphism C1 C2) :
-    composition_cm (id_cm C2) f = f.
+Proposition compose_id_cm_left (f : ContractMorphism C1 C2) :
+    compose_cm (id_cm C2) f = f.
 Proof.
     now apply eq_cm.
 Qed.
 
-Proposition composition_id_cm_right (f : ContractMorphism C1 C2) :
-    composition_cm f (id_cm C1) = f.
+Proposition compose_id_cm_right (f : ContractMorphism C1 C2) :
+    compose_cm f (id_cm C1) = f.
 Proof.
     now apply eq_cm.
 Qed.
 
 (** Composition is associative *)
-Proposition composition_assoc_cm
+Proposition compose_cm_assoc
     (f : ContractMorphism C1 C2) 
     (g : ContractMorphism C2 C3) 
     (h : ContractMorphism C3 C4) :
-    composition_cm h (composition_cm g f) =
-    composition_cm (composition_cm h g) f.
+    compose_cm h (compose_cm g f) =
+    compose_cm (compose_cm h g) f.
 Proof.
     now apply eq_cm.
 Qed.
@@ -230,8 +283,8 @@ End MorphismCompositionResults.
 
 (** We will treat various type of contract morphisms, starting with isomorphisms. *)
 Section IsomorphismDefinition.
-Context `{Serializable Msg1} `{Serializable Setup1} `{Serializable State1} `{Serializable Error1}
-        `{Serializable Msg2} `{Serializable Setup2} `{Serializable State2} `{Serializable Error2}
+Context `{Serializable Setup1} `{Serializable Msg1} `{Serializable State1} `{Serializable Error1}
+        `{Serializable Setup2} `{Serializable Msg2} `{Serializable State2} `{Serializable Error2}
         {C1 : Contract Setup1 Msg1 State1 Error1} 
         {C2 : Contract Setup2 Msg2 State2 Error2}.
 
@@ -247,8 +300,8 @@ Proof.
 Qed.
 
 Definition is_iso_cm (f : ContractMorphism C1 C2) (g : ContractMorphism C2 C1) : Prop :=
-    composition_cm g f = id_cm C1 /\
-    composition_cm f g = id_cm C2.
+    compose_cm g f = id_cm C1 /\
+    compose_cm f g = id_cm C2.
 
 Lemma iso_cm_components :
     forall (f : ContractMorphism C1 C2) (g : ContractMorphism C2 C1),
@@ -268,7 +321,7 @@ Proof.
         unfold is_iso_cm.
         split; now apply eq_cm.
     (* <- *)
-    -   unfold is_iso_cm, composition_cm, id_cm.
+    -   unfold is_iso_cm, compose_cm, id_cm.
         now intro H_iso.
 Qed.
 
@@ -276,8 +329,8 @@ End IsomorphismDefinition.
 
 
 Section Isomorphisms.
-Context `{Serializable Msg1} `{Serializable Setup1} `{Serializable State1} `{Serializable Error1}
-        `{Serializable Msg2} `{Serializable Setup2} `{Serializable State2} `{Serializable Error2}.
+Context `{Serializable Setup1} `{Serializable Msg1} `{Serializable State1} `{Serializable Error1}
+        `{Serializable Setup2} `{Serializable Msg2} `{Serializable State2} `{Serializable Error2}.
 
 (** An equality predicate on contracts *)
 Definition contracts_isomorphic 
@@ -286,8 +339,8 @@ Definition contracts_isomorphic
     exists (f : ContractMorphism C1 C2) (g : ContractMorphism C2 C1),
     is_iso_cm f g.
 
-Context `{Serializable Msg3} `{Serializable Setup3} `{Serializable State3} `{Serializable Error3}
-        `{Serializable Msg4} `{Serializable Setup4} `{Serializable State4} `{Serializable Error4}
+Context `{Serializable Setup3} `{Serializable Msg3} `{Serializable State3} `{Serializable Error3}
+        `{Serializable Setup4} `{Serializable Msg4} `{Serializable State4} `{Serializable Error4}
         { C1 : Contract Setup1 Msg1 State1 Error1 } 
         { C2 : Contract Setup2 Msg2 State2 Error2 }
         { C3 : Contract Setup3 Msg3 State3 Error3 }
@@ -316,19 +369,19 @@ Lemma composition_iso_cm
     (g2 : ContractMorphism C3 C2) :
     is_iso_cm f1 f2 -> 
     is_iso_cm g1 g2 -> 
-    is_iso_cm (composition_cm g1 f1) (composition_cm f2 g2).
+    is_iso_cm (compose_cm g1 f1) (compose_cm f2 g2).
 Proof.
     unfold is_iso_cm.
     intros iso_f iso_g. 
     destruct iso_f as [iso_f1 iso_f2].
     destruct iso_g as [iso_g1 iso_g2].
-    split; rewrite composition_assoc_cm.
-    -   rewrite <- (composition_assoc_cm g1 g2 f2).
+    split; rewrite compose_cm_assoc.
+    -   rewrite <- (compose_cm_assoc g1 g2 f2).
         rewrite iso_g1. 
-        now rewrite (composition_id_cm_right f2).
-    -   rewrite <- (composition_assoc_cm f2 f1 g1).
+        now rewrite (compose_id_cm_right f2).
+    -   rewrite <- (compose_cm_assoc f2 f1 g1).
         rewrite iso_f2. 
-        now rewrite (composition_id_cm_right g1).
+        now rewrite (compose_id_cm_right g1).
 Qed.
 
 End Isomorphisms.
@@ -336,8 +389,8 @@ End Isomorphisms.
 Axiom todo : string -> forall {A}, A.
 (** Now, onto injections *)
 Section Injections.
-Context `{Serializable Msg1} `{Serializable Setup1} `{Serializable State1} `{Serializable Error1}
-        `{Serializable Msg2} `{Serializable Setup2} `{Serializable State2} `{Serializable Error2}
+Context `{Serializable Setup1} `{Serializable Msg1} `{Serializable State1} `{Serializable Error1}
+        `{Serializable Setup2} `{Serializable Msg2} `{Serializable State2} `{Serializable Error2}
         {C1 : Contract Setup1 Msg1 State1 Error1} 
         {C2 : Contract Setup2 Msg2 State2 Error2}.
 
@@ -355,8 +408,8 @@ End Injections.
 
 (** Finally, we treat surjections, or quotients *)
 Section Surjections.
-Context `{Serializable Msg1} `{Serializable Setup1} `{Serializable State1} `{Serializable Error1}
-        `{Serializable Msg2} `{Serializable Setup2} `{Serializable State2} `{Serializable Error2}
+Context `{Serializable Setup1} `{Serializable Msg1} `{Serializable State1} `{Serializable Error1}
+        `{Serializable Setup2} `{Serializable Msg2} `{Serializable State2} `{Serializable Error2}
         {C1 : Contract Setup1 Msg1 State1 Error1} 
         {C2 : Contract Setup2 Msg2 State2 Error2}.
 
@@ -372,9 +425,9 @@ End Surjections.
 
 (** TODO EXACTNESS *)
 Section Exactness.
-Context `{Serializable Msg1} `{Serializable Setup1} `{Serializable State1} `{Serializable Error1}
-        `{Serializable Msg2} `{Serializable Setup2} `{Serializable State2} `{Serializable Error2}
-        `{Serializable Msg3} `{Serializable Setup3} `{Serializable State3} `{Serializable Error3}
+Context `{Serializable Setup1} `{Serializable Msg1} `{Serializable State1} `{Serializable Error1}
+        `{Serializable Setup2} `{Serializable Msg2} `{Serializable State2} `{Serializable Error2}
+        `{Serializable Setup3} `{Serializable Msg3} `{Serializable State3} `{Serializable Error3}
         { C1 : Contract Setup1 Msg1 State1 Error1 } 
         { C2 : Contract Setup2 Msg2 State2 Error2 }
         { C3 : Contract Setup3 Msg3 State3 Error3 }.
@@ -413,14 +466,15 @@ Record ContractStep (C : Contract Setup Msg State Error)
 Definition ContractTrace (C : Contract Setup Msg State Error) := 
     ChainedList State (ContractStep C).
 
-(* TODO some notion of reachability which involves an `init_state` to replace 
-    into left_cm_induction *)
+
+Definition is_genesis_state (C : Contract Setup Msg State Error) (init_cstate : State) : Prop := 
+    exists init_chain init_ctx init_setup, 
+    init C init_chain init_ctx init_setup = Ok init_cstate.
 
 Definition cstate_reachable (C : Contract Setup Msg State Error) (cstate : State) : Prop := 
     exists init_cstate,
     (* init_cstate is a valid initial cstate *)
-    (exists init_chain init_ctx init_setup, 
-    init C init_chain init_ctx init_setup = Ok init_cstate) /\
+    is_genesis_state C init_cstate /\
     (* with a trace to cstate *)
     inhabited (ContractTrace C init_cstate cstate).
 
@@ -439,11 +493,10 @@ Qed.
 End ContractTrace.
 
 
-Context `{Serializable Msg1} `{Serializable Setup1} `{Serializable State1} `{Serializable Error1}
-        `{Serializable Msg2} `{Serializable Setup2} `{Serializable State2} `{Serializable Error2}
+Context `{Serializable Setup1} `{Serializable Msg1} `{Serializable State1} `{Serializable Error1}
+        `{Serializable Setup2} `{Serializable Msg2} `{Serializable State2} `{Serializable Error2}
         {C1 : Contract Setup1 Msg1 State1 Error1} 
         {C2 : Contract Setup2 Msg2 State2 Error2}.
-
 
 (* A theorem to use if we are inducting on C *)
 (* - the relationship always exists with some parallel C' 
@@ -467,10 +520,10 @@ Theorem left_cm_induction :
     cstate2 = state_morph C1 C2 f cstate1).
 Proof.
     intros f * c_at_caddr.
-    destruct f as [msg_morph setup_morph state_morph error_morph init_coherence recv_coherence].
+    destruct f as [setup_morph msg_morph state_morph error_morph init_coherence recv_coherence].
     set (f := {|
-        msg_morph := msg_morph;
         setup_morph := setup_morph;
+        msg_morph   := msg_morph;
         state_morph := state_morph;
         error_morph := error_morph;
         init_coherence := init_coherence;
@@ -565,10 +618,10 @@ Theorem right_cm_induction:
     ContractTrace C2 (state_morph C1 C2 f from) (state_morph C1 C2 f to).
 Proof.
     intros * ctrace.
-    destruct f as [msg_morph setup_morph state_morph error_morph init_coherence recv_coherence].
+    destruct f as [setup_morph msg_morph state_morph error_morph init_coherence recv_coherence].
     set (f := {|
-        msg_morph := msg_morph;
         setup_morph := setup_morph;
+        msg_morph   := msg_morph;
         state_morph := state_morph;
         error_morph := error_morph;
         init_coherence := init_coherence;
@@ -599,55 +652,270 @@ End MorphismInduction.
 
 
 Section ContractTraceMorphism.
-Context `{Serializable Msg1} `{Serializable Setup1} `{Serializable State1} `{Serializable Error1}
-        `{Serializable Msg2} `{Serializable Setup2} `{Serializable State2} `{Serializable Error2}.
+Context `{Serializable Setup1} `{Serializable Msg1} `{Serializable State1} `{Serializable Error1}
+        `{Serializable Setup2} `{Serializable Msg2} `{Serializable State2} `{Serializable Error2}.
 
 (* *)
-Record ContractTraceMorphism 
+Record ContractTraceMorphism
     (C1 : Contract Setup1 Msg1 State1 Error1)
     (C2 : Contract Setup2 Msg2 State2 Error2) := 
     build_ct_morph {
         (* a function *)
         ct_state_morph : State1 -> State2 ;
-        (* TODO init -> init *)
+        (* init state -> init state *)
+        genesis_fixpoint : forall init_cstate,
+            is_genesis_state C1 init_cstate ->
+            is_genesis_state C2 (ct_state_morph init_cstate) ;
         (* coherence *)
         cstep_morph : forall state1 state2,
-            cstate_reachable C1 state1 ->
             ContractStep C1 state1 state2 ->
             ContractStep C2 (ct_state_morph state1) (ct_state_morph state2) ;
 }.
 
-(* Identity *)
-(* Equality *)
-(* Composition *)
-
-Record ContractTraceIsomorphism
-    (C1 : Contract Setup1 Msg1 State1 Error1)
-    (C2 : Contract Setup2 Msg2 State2 Error2) := {
-    (* todo *)
-    }.
-
-
-Context {C1 : Contract Setup1 Msg1 State1 Error1} 
-        {C2 : Contract Setup2 Msg2 State2 Error2}.
-
-(** Isomorphism -> Equivalence *)
-Proposition ciso_to_ctiso (f : ContractMorphism C1 C2) (g : ContractMorphism C2 C1) :
-    is_iso_cm f g -> ContractTraceIsomorphism C1 C2.
-Admitted.
-
-(* LIFTING THEOREM?! *)
-
 End ContractTraceMorphism.
 
+Section IdentityCTMorphism.
+Context `{Serializable Setup1} `{Serializable Msg1} `{Serializable State1} `{Serializable Error1}.
+
+(* The Identity CT Morphism *)
+Lemma id_genesis_fixpoint (C : Contract Setup1 Msg1 State1 Error1) : forall init_cstate,
+    is_genesis_state C init_cstate ->
+    is_genesis_state C (id init_cstate).
+Proof. auto. Qed.
+Lemma id_cstep_morph (C : Contract Setup1 Msg1 State1 Error1) : forall state1 state2,
+    ContractStep C state1 state2 ->
+    ContractStep C (id state1) (id state2).
+Proof. auto. Qed.
+
+Definition id_ctm (C : Contract Setup1 Msg1 State1 Error1) : ContractTraceMorphism C C := {| 
+    ct_state_morph := id ; 
+    genesis_fixpoint := id_genesis_fixpoint C ;
+    cstep_morph := id_cstep_morph C ;
+|}.
+
+End IdentityCTMorphism.
 
 
-(** Equivalences of Contracts : isomorphic behavior, just reachable states *)
-Section ContractEquiv.
-Context `{Serializable Msg1} `{Serializable Setup1} `{Serializable State1} `{Serializable Error1}
-        `{Serializable Msg2} `{Serializable Setup2} `{Serializable State2} `{Serializable Error2}
+Section EqualityOfCTMorphisms.
+(* Equality *)
+Context `{Serializable Setup1} `{Serializable Msg1} `{Serializable State1} `{Serializable Error1}
+        `{Serializable Setup2} `{Serializable Msg2} `{Serializable State2} `{Serializable Error2}.
+
+Proposition eq_ctm 
+    (C1 : Contract Setup1 Msg1 State1 Error1) (C2 : Contract Setup2 Msg2 State2 Error2) : 
+    forall (f g : ContractTraceMorphism C1 C2),
+    (ct_state_morph C1 C2 f) = (ct_state_morph C1 C2 g) -> 
+    f = g.
+Proof.
+    intros * ct_state_eq.
+    destruct f, g.
+    cbn in ct_state_eq. 
+    subst.
+    f_equal; try apply proof_irrelevance.
+    apply functional_extensionality_dep.
+    intro state1.
+    apply functional_extensionality_dep.
+    intro state2.
+    apply functional_extensionality.
+    intro cstate_reach.
+    (* todo what's equality on ContractStep? I think you need extra conditions ... *)
+Admitted.
+(* proof irrelevance or something *)
+
+
+End EqualityOfCTMorphisms.
+
+
+Section CTMorphismComposition.
+(* Composition *)
+Context `{Serializable Setup1} `{Serializable Msg1} `{Serializable State1} `{Serializable Error1}
+        `{Serializable Setup2} `{Serializable Msg2} `{Serializable State2} `{Serializable Error2}
+        `{Serializable Setup3} `{Serializable Msg3} `{Serializable State3} `{Serializable Error3}
+        {C1 : Contract Setup1 Msg1 State1 Error1} 
+        {C2 : Contract Setup2 Msg2 State2 Error2}
+        {C3 : Contract Setup3 Msg3 State3 Error3}.
+
+Lemma genesis_compose (m2 : ContractTraceMorphism C2 C3) (m1 : ContractTraceMorphism C1 C2) : 
+    forall init_cstate,
+    is_genesis_state C1 init_cstate ->
+    is_genesis_state C3 (compose (ct_state_morph C2 C3 m2) (ct_state_morph C1 C2 m1) init_cstate).
+Proof.
+    destruct m2 as [cmorph2 gen_fix2 step2].
+    destruct m1 as [cmorph1 gen_fix1 step1].
+    intros * gen_C1.
+    now apply gen_fix1, gen_fix2 in gen_C1.
+Qed.
+
+Lemma cstep_compose (m2 : ContractTraceMorphism C2 C3) (m1 : ContractTraceMorphism C1 C2) : 
+    forall state1 state2,
+    ContractStep C1 state1 state2 ->
+    ContractStep C3 
+        (compose (ct_state_morph C2 C3 m2) (ct_state_morph C1 C2 m1) state1) 
+        (compose (ct_state_morph C2 C3 m2) (ct_state_morph C1 C2 m1) state2).
+Proof.
+    destruct m2 as [cmorph2 gen_fix2 step2].
+    destruct m1 as [cmorph1 gen_fix1 step1].
+    intros * step.
+    apply step2.
+    now apply step1.
+Qed.
+
+Definition compose_ctm
+    (m2 : ContractTraceMorphism C2 C3)
+    (m1 : ContractTraceMorphism C1 C2) : ContractTraceMorphism C1 C3 := 
+{| 
+    ct_state_morph := compose (ct_state_morph C2 C3 m2) (ct_state_morph C1 C2 m1) ; 
+    genesis_fixpoint := genesis_compose m2 m1 ;
+    cstep_morph := cstep_compose m2 m1 ;
+|}.
+
+End CTMorphismComposition.
+
+
+Section CTMorphismCompositionResults.
+Context `{Serializable Setup1} `{Serializable Msg1} `{Serializable State1} `{Serializable Error1}
+        `{Serializable Setup2} `{Serializable Msg2} `{Serializable State2} `{Serializable Error2}
+        `{Serializable Setup3} `{Serializable Msg3} `{Serializable State3} `{Serializable Error3}
+        `{Serializable Setup4} `{Serializable Msg4} `{Serializable State4} `{Serializable Error4}
+        { C1 : Contract Setup1 Msg1 State1 Error1 } 
+        { C2 : Contract Setup2 Msg2 State2 Error2 }
+        { C3 : Contract Setup3 Msg3 State3 Error3 }
+        { C4 : Contract Setup4 Msg4 State4 Error4 }.
+
+(* Composition associative *)
+Proposition compose_ctm_assoc 
+    (f : ContractTraceMorphism C1 C2)
+    (g : ContractTraceMorphism C2 C3)
+    (h : ContractTraceMorphism C3 C4) : 
+    compose_ctm h (compose_ctm g f) = 
+    compose_ctm (compose_ctm h g) f.
+Proof.
+    now apply eq_ctm.
+Qed.
+
+(* Composition with the Identity is Trivial *)
+Proposition compose_id_ctm_left (f : ContractTraceMorphism C1 C2) :
+    compose_ctm (id_ctm C2) f = f.
+Proof.
+    now apply eq_ctm.
+Qed.
+
+Proposition compose_id_ctm_right (f : ContractTraceMorphism C1 C2) :
+    compose_ctm f (id_ctm C1) = f.
+Proof.
+    now apply eq_ctm.
+Qed.
+
+End CTMorphismCompositionResults.
+
+
+Section LiftingTheorem.
+Context `{Serializable Setup1} `{Serializable Msg1} `{Serializable State1} `{Serializable Error1}
+        `{Serializable Setup2} `{Serializable Msg2} `{Serializable State2} `{Serializable Error2}
         {C1 : Contract Setup1 Msg1 State1 Error1} 
         {C2 : Contract Setup2 Msg2 State2 Error2}.
+
+(** Lifting Theorem *)
+Lemma lift_genesis (f : ContractMorphism C1 C2) : 
+    forall init_cstate,
+        is_genesis_state C1 init_cstate ->
+        is_genesis_state C2 (state_morph C1 C2 f init_cstate).
+Proof.
+    destruct f as [setup_morph msg_morph state_morph error_morph i_coh r_coh].
+    cbn.
+    intros * genesis. 
+    unfold is_genesis_state in *.
+    destruct genesis as [c [ctx [s init_coh]]].
+    exists c, ctx, (setup_morph s).
+    rewrite <- i_coh.
+    unfold result_functor.
+    now destruct (init C1 c ctx s).
+Qed.
+
+Lemma lift_cstep_morph (f : ContractMorphism C1 C2) : 
+    forall state1 state2,
+        ContractStep C1 state1 state2 ->
+        ContractStep C2 
+            (state_morph C1 C2 f state1) 
+            (state_morph C1 C2 f state2).
+Proof.
+    destruct f as [setup_morph msg_morph state_morph error_morph i_coh r_coh].
+    cbn.
+    intros * step.
+    destruct step as [seq_chain seq_ctx seq_msg seq_new_acts recv_step].
+    apply (build_contract_step C2 (state_morph state1) (state_morph state2) seq_chain seq_ctx (option_map msg_morph seq_msg) seq_new_acts).
+    rewrite <- r_coh.
+    unfold result_functor.
+    destruct (receive C1 seq_chain seq_ctx state1 seq_msg);
+    try destruct t;
+    now inversion recv_step.
+Qed.
+
+Definition cm_lift_ctm (f : ContractMorphism C1 C2) : ContractTraceMorphism C1 C2 :=
+    build_ct_morph C1 C2 (state_morph C1 C2 f) (lift_genesis f) (lift_cstep_morph f).
+
+End LiftingTheorem.
+
+
+(* TODO organize all this better ... *)
+Section LiftingTheoremComposition.
+Context `{Serializable Setup1} `{Serializable Msg1} `{Serializable State1} `{Serializable Error1}
+        `{Serializable Setup2} `{Serializable Msg2} `{Serializable State2} `{Serializable Error2}
+        `{Serializable Setup3} `{Serializable Msg3} `{Serializable State3} `{Serializable Error3}
+        {C1 : Contract Setup1 Msg1 State1 Error1} 
+        {C2 : Contract Setup2 Msg2 State2 Error2}
+        {C3 : Contract Setup3 Msg3 State3 Error3}.
+
+(** Id lifts to Id *)
+Proposition cm_lift_ctm_id : 
+    cm_lift_ctm (id_cm C1) = id_ctm C1.
+Proof.
+    now apply eq_ctm.
+Qed.
+
+(** Compositions lift to compositions *)
+Proposition cm_lift_ctm_compose 
+    (g : ContractMorphism C2 C3) (f : ContractMorphism C1 C2) : 
+    cm_lift_ctm (compose_cm g f) = 
+    compose_ctm (cm_lift_ctm g) (cm_lift_ctm f).
+Proof.
+    apply eq_ctm.
+    now unfold compose_ctm.
+Qed.
+
+End LiftingTheoremComposition.
+
+
+Section ContractBisimulation.
+Context `{Serializable Setup1} `{Serializable Msg1} `{Serializable State1} `{Serializable Error1}
+        `{Serializable Setup2} `{Serializable Msg2} `{Serializable State2} `{Serializable Error2}
+        {C1 : Contract Setup1 Msg1 State1 Error1} 
+        {C2 : Contract Setup2 Msg2 State2 Error2}.
+
+(* A bisimulation of contracts, or an isomorphism of contract traces *)
+Definition is_iso_ctm 
+    (m1 : ContractTraceMorphism C1 C2) (m2 : ContractTraceMorphism C2 C1) := 
+    compose_ctm m2 m1 = id_ctm C1 /\
+    compose_ctm m1 m2 = id_ctm C2.
+
+(** Contract Isomorphism -> Contract Trace Isomorphism *)
+Proposition ciso_to_ctiso (f : ContractMorphism C1 C2) (g : ContractMorphism C2 C1) :
+    is_iso_cm f g -> is_iso_ctm (cm_lift_ctm f) (cm_lift_ctm g).
+Proof.
+    unfold is_iso_cm, is_iso_ctm.
+    intro iso_cm.
+    destruct iso_cm as [iso_cm_l iso_cm_r].
+    rewrite <- (cm_lift_ctm_compose g f).
+    rewrite <- (cm_lift_ctm_compose f g).
+    rewrite iso_cm_l.
+    rewrite iso_cm_r.
+    now repeat rewrite cm_lift_ctm_id.
+Qed.
+
+(** A bisimulation of contracts is a pair of contract morphisms that lift to an isomorphism of 
+        contract traces. *)
+Definition is_bisim (f : ContractMorphism C1 C2) (g : ContractMorphism C2 C1) : Prop := 
+    is_iso_ctm (cm_lift_ctm f) (cm_lift_ctm g).
 
 (** Weak Equivalence : an equivalence on reachable states *)
 Definition is_equivalence (f : ContractMorphism C1 C2) (g : ContractMorphism C2 C1) : Prop := 
@@ -655,20 +923,17 @@ Definition is_equivalence (f : ContractMorphism C1 C2) (g : ContractMorphism C2 
     is_iso (setup_morph C1 C2 f) (setup_morph C2 C1 g) /\
     forall cstate1 cstate2,
     (* f and g are isomorphic on reachable states *)
-    (cstate_reachable C1 cstate1 -> compose (state_morph C2 C1 g) (state_morph C1 C2 f) cstate1 = cstate1) /\
-    (cstate_reachable C2 cstate2 -> compose (state_morph C1 C2 f) (state_morph C2 C1 g) cstate2 = cstate2).
+    (cstate_reachable C1 cstate1 -> 
+        compose (state_morph C2 C1 g) (state_morph C1 C2 f) cstate1 = cstate1) /\
+    (cstate_reachable C2 cstate2 -> 
+        compose (state_morph C1 C2 f) (state_morph C2 C1 g) cstate2 = cstate2).
 
 (** Isomorphism -> Equivalence *)
 Proposition iso_to_equiv_cm (f : ContractMorphism C1 C2) (g : ContractMorphism C2 C1) : 
     is_iso_cm f g -> is_equivalence f g.
 Admitted.
 
-(** equivalence -> contract trace equivalence *)
-Proposition equiv_to_ctmorph (f : ContractMorphism C1 C2) (g : ContractMorphism C2 C1) :
-    is_equivalence f g -> ContractTraceIsomorphism C1 C2.
-Admitted.
-
-End ContractEquiv.
+End ContractBisimulation.
 
 
 End ContractMorphisms.
