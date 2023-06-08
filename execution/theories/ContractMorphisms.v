@@ -1,15 +1,19 @@
 (** Contract Morphisms:
     A contract morphism f : C1 -> C2 is a formal, structural relationship between contracts C1 and C2 
     It consists of:
-    1. functions between contract types:
+    1. Functions between contract types:
         setup_morph : Setup1 -> Setup1
         msg_morph   : Msg1   -> Msg1
         state_morph : State1 -> State1
         error_morph : Error1 -> Error1
-    2. proofs of coherence:
-       using the functions, we can transform inputs to C1 into inputs to C2,
+    2. Proofs of coherence:
+       Using the functions, we can transform inputs to C1 into inputs to C2,
        and outputs of C1 into outputs of C2.
+       We should end up at the same outputs of C2 no matter what order we do 
+       that transformation in.
 
+    In particular, this gives us a notion of an isomorphism of contracts, from which we 
+    can derive the notion of a bisimulation of contracts.
 *)
 
 From Coq Require Import Basics.
@@ -159,8 +163,8 @@ Context `{Serializable Setup1} `{Serializable Msg1} `{Serializable State1} `{Ser
 Proposition eq_cm : 
     forall (f g : ContractMorphism C1 C2),
     (* if the components are equal ... *)
-    (msg_morph C1 C2 f) = (msg_morph C1 C2 g) -> 
     (setup_morph C1 C2 f) = (setup_morph C1 C2 g) -> 
+    (msg_morph C1 C2 f) = (msg_morph C1 C2 g) -> 
     (state_morph C1 C2 f) = (state_morph C1 C2 g) -> 
     (error_morph C1 C2 f) = (error_morph C1 C2 g) -> 
     (* ... then the morphisms are equal *)
