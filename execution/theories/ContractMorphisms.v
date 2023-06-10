@@ -71,11 +71,11 @@ End MorphismDefinition.
 
 Section MorphismUtils.
 Context `{Serializable Setup1} `{Serializable Msg1} `{Serializable State1} `{Serializable Error1}
-        `{Serializable Setup2} `{Serializable Msg2} `{Serializable State2} `{Serializable Error2}
-        {C1 : Contract Setup1 Msg1 State1 Error1} 
-        {C2 : Contract Setup2 Msg2 State2 Error2}.
+        `{Serializable Setup2} `{Serializable Msg2} `{Serializable State2} `{Serializable Error2}.
 
 Definition init_coherence_prop  
+    (C1 : Contract Setup1 Msg1 State1 Error1)
+    (C2 : Contract Setup2 Msg2 State2 Error2)
     (setup_morph : Setup1 -> Setup2)
     (state_morph : State1 -> State2)
     (error_morph : Error1 -> Error2) :=
@@ -85,6 +85,8 @@ Definition init_coherence_prop
     init C2 c ctx (setup_morph s).
 
 Definition recv_coherence_prop
+    (C1 : Contract Setup1 Msg1 State1 Error1)
+    (C2 : Contract Setup2 Msg2 State2 Error2)
     (msg_morph : Msg1 -> Msg2)
     (state_morph : State1 -> State2)
     (error_morph : Error1 -> Error2) :=
@@ -95,6 +97,8 @@ Definition recv_coherence_prop
 
 
 Definition coherence_prop 
+    (C1 : Contract Setup1 Msg1 State1 Error1)
+    (C2 : Contract Setup2 Msg2 State2 Error2)
     (setup_morph : Setup1 -> Setup2)
     (msg_morph   : Msg1   -> Msg2)
     (state_morph : State1 -> State2)
