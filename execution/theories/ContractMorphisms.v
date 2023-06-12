@@ -470,6 +470,7 @@ Admitted.
 
 End Isomoprhism.
 
+
 Section Exactness.
 (** Extend the contract's type so it can be the recipient of a morphism. *)
 Section PointedContract.
@@ -497,14 +498,33 @@ Definition pointed_contract (C : Contract Setup Msg State Error) :=
 
 End PointedContract.
 
+Context `{Serializable Setup1} `{Serializable Msg1} `{Serializable State1} `{Serializable Error1}
+        `{Serializable Setup2} `{Serializable Msg2} `{Serializable State2} `{Serializable Error2}
+        `{Serializable Setup3} `{Serializable Msg3} `{Serializable State3} `{Serializable Error3}
+        {C1 : Contract Setup1 Msg1 State1 Error1} 
+        {C2 : Contract Setup2 Msg2 State2 Error2}
+        {C3 : Contract Setup3 Msg3 State3 Error3}.
 
+Definition C3_b := pointed_contract C3.
 
-(* TODO formally encode the notion of exactness here. *)
+Definition msg_exact (i : ContractMorphism C1 C2) (p : ContractMorphism C2 C3_b) := 
+    forall m,
+    msg_morph C2 C3_b p m = inr tt <-> 
+    (exists m', m = msg_morph C1 C2 i m').
 
+Definition state_exact (f_state : State3) (i : ContractMorphism C1 C2) (p : ContractMorphism C2 C3_b) : Prop := 
+    forall st,
+    (exists st_f, st = state_morph C1 C2 i st_f) ->
+    state_morph C2 C3_b p st = f_state.
 
+(** Exactness *)
+Definition exact_triple_cm {f_state : State3} (i : ContractMorphism C1 C2) (p : ContractMorphism C2 C3_b) := 
+    is_weak_inj_cm i /\ 
+    is_weak_surj_cm p /\
+    msg_exact i p /\ 
+    state_exact f_state i p.
 
 End Exactness.
-
 
 
 (** Morphism Induction: 
@@ -533,7 +553,6 @@ Record ContractStep (C : Contract Setup Msg State Error)
 
 Definition ContractTrace (C : Contract Setup Msg State Error) := 
     ChainedList State (ContractStep C).
-
 
 Definition is_genesis_state (C : Contract Setup Msg State Error) (init_cstate : State) : Prop := 
     exists init_chain init_ctx init_setup, 
