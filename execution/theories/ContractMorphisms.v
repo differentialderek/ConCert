@@ -544,11 +544,11 @@ Theorem left_cm_induction :
     exists (cstate1 : State1), 
     contract_state bstate caddr = Some cstate1 /\
     (* every reachable cstate1 of C1 corresponds to a contract-reachable cstate2 of C2 ... *)
-    (exists (cstate2 : State2),
+    exists (cstate2 : State2),
     (* 1. init_cstate2 is a valid initial cstate of C'  *)
     cstate_reachable C2 cstate2 /\
     (* 2. cstate and cstate' are related by state_morph. *)
-    cstate2 = state_morph C1 C2 f cstate1).
+    cstate2 = state_morph C1 C2 f cstate1.
 Proof.
     intros f * c_at_caddr.
     destruct f as [setup_morph msg_morph state_morph error_morph init_coherence recv_coherence].
@@ -982,7 +982,7 @@ End Equivalence.
 
 
 (** Decomposing upgradeable contracts with morphisms *)
-Section Exactness.
+Section Upgradeability.
 
 (* First we need to be able to extend a contract's type so it can be the recipient of a morphism. *)
 Section PointedContract.
@@ -1010,34 +1010,128 @@ Definition pointed_contract (C : Contract Setup Msg State Error) :=
 
 End PointedContract.
 
-Context `{Serializable Setup1} `{Serializable Msg1} `{Serializable State1} `{Serializable Error1}
-        `{Serializable Setup2} `{Serializable Msg2} `{Serializable State2} `{Serializable Error2}
-        `{Serializable Setup3} `{Serializable Msg3} `{Serializable State3} `{Serializable Error3}
-        (* consider contracts C_f (version contract), C (main contract), and C_s (the framework contract)*)
-        {C_f : Contract Setup1 Msg1 State1 Error1} 
-        {C   : Contract Setup2 Msg2 State2 Error2}
-        {C_s : Contract Setup3 Msg3 State3 Error3}.
+(** Now consider an upgradeable contract C, which can be decomposed by: 
+    1. a parameterized family of fiber contracts (C_f version), which are individual versions of the contract, and
+    2. and a skeleton C_skel, which governs upgradeability *)
+Context `{Serializable Setup}   `{Serializable Msg}   `{Serializable State}   `{Serializable Error}
+        `{Serializable Setup_b} `{Serializable Msg_b} `{Serializable State_b} `{Serializable Error_b}
+        (* State_b contains the information relevant to indicate the current version (fiber) *)
+        `{setup_f : State_b -> Type} `{forall (v : State_b), Serializable (setup_f v)}
+        `{msg_f   : State_b -> Type} `{forall (v : State_b), Serializable (msg_f v)}
+        `{state_f : State_b -> Type} `{forall (v : State_b), Serializable (state_f v)}
+        `{error_f : State_b -> Type} `{forall (v : State_b), Serializable (error_f v)}
+        (* Now consider a contract C ... *)
+        {C   : Contract Setup   Msg   State   Error}
+        (* the family of its fiber contracts ... *)
+        {C_f : forall (v : State_b), Contract (setup_f v) (msg_f v) (state_f v) (error_f v)}
+        (* and its skeleton. *)
+        {C_skel : Contract Setup_b Msg_b State_b Error_b}
+        (* from a msg into the skeleton we can extract the new, upgraded fiber *)
+        {extract_version : Msg_b -> State_b}
+        {new_version_state : forall old_v msg, state_f old_v -> state_f (extract_version msg)}.
 
-(* slightly modify C_s into C_b *)
-Definition C_b := pointed_contract C_s.
+(* slightly modify C_s into C_b, the "base" contract *)
+Definition C_b := pointed_contract C_skel.
 
-Definition msg_exact (i : ContractMorphism C_f C) (p : ContractMorphism C C_b) := 
+(** All messages into C are either to the current version, or to make an upgrade *)
+Definition msg_decomposable c_version (i : ContractMorphism (C_f c_version) C) (p : ContractMorphism C C_b) := 
     forall m,
     msg_morph C C_b p m = inr tt <-> 
-    (exists m', m = msg_morph C_f C i m').
+    (exists m', m = msg_morph (C_f c_version) C i m').
 
-Definition state_exact (f_version : State3) (i : ContractMorphism C_f C) (p : ContractMorphism C C_b) : Prop := 
+(** All possible states of C can be categorized by what fiber they belong to *)
+Definition states_categorized c_version (i : ContractMorphism (C_f c_version) C) (p : ContractMorphism C C_b) := 
     forall st,
-    (exists st_f, st = state_morph C_f C i st_f) <->
-    state_morph C C_b p st = f_version.
+    (exists st_f, st = state_morph (C_f c_version) C i st_f) <->
+    state_morph C C_b p st = c_version.
 
-(** A "short exact sequence" of contracts : C_f is the *current version* of C *)
-Definition short_exact_cm (f_version : State3) (i : ContractMorphism C_f C) (p : ContractMorphism C C_b) := 
-    is_weak_inj_cm i /\ 
-    is_weak_surj_cm p /\
-    msg_exact i p /\ 
-    state_exact f_version i p.
+(** If we call upgrade, then the state changes as described 
+        by the functions extract_version and new_version_state *)
+Definition fiber_transition 
+    old_v 
+    (i_param : forall c_version, ContractMorphism (C_f c_version) C)
+    (p : ContractMorphism C C_b) := 
+    forall cstate cstate_f,
+    (* forall states of version old_v *)
+    cstate = state_morph (C_f old_v) C (i_param old_v) cstate_f ->
+    (* and forall successful calls ... *)
+    forall chain ctx msg new_state new_acts msg',
+    receive C chain ctx cstate (Some msg) = Ok (new_state, new_acts) -> 
+    (* to upgrade the contract C ... *)
+    msg_morph C C_b p msg = inl msg' ->
+    (* then the new state is the state given by new_version_state *)
+    let new_v := extract_version msg' in 
+    new_state = 
+        state_morph (C_f new_v) C (i_param new_v) (new_version_state old_v msg' cstate_f).
 
-End Exactness.
+(** The definition of an upgradeable contract characterized by C_f, C_b, i, 
+        and a sequence of morphisms C_f version -> C ->> C_b *)
+Definition upgradeability_decomposition 
+    (i_param : forall c_version, ContractMorphism (C_f c_version) C) 
+    (p : ContractMorphism C C_b) := 
+    (* Forall versions of a contract C, *)
+    forall c_version,
+    let i := i_param c_version in 
+    msg_decomposable c_version i p /\ 
+    states_categorized c_version i p /\ 
+    fiber_transition c_version i_param p.
+
+(* Upgradeability, described by short exact sequences of contracts *)
+Theorem upgradeability
+    (* Consider family of embeddings, and *)
+    (i_param : forall c_version, ContractMorphism (C_f c_version) C) 
+    (* a projection onto the skeleton C_b. *)
+    (p : ContractMorphism C C_b) : 
+    (* forall contract states and corresponding contract versions, *)
+    forall cstate c_version cstate_f,
+    (* with i, the embedding for version c_version, ... *)
+    let i := i_param c_version in 
+    (* if C_f -> C ->> C_b is the decomposition of a contract's upgradeability ... *)
+    upgradeability_decomposition i_param p ->
+    (* and cstate is in the image of cstate_f under the embedding i
+        (meaning that cstate has version c_version) ... *)
+    cstate = state_morph (C_f c_version) C i cstate_f ->
+    (* Then forall calls to the versioned contract *)
+    forall chain ctx m new_state new_acts,
+    receive C chain ctx cstate (Some m) = Ok (new_state, new_acts) -> 
+    (* it either stays within this version *)
+    (exists cstate_f', new_state = state_morph (C_f c_version) C i cstate_f') \/
+    (* it moves onto a new version *)
+    (exists c_version' cstate_f', 
+    new_state = state_morph (C_f c_version') C (i_param c_version') cstate_f').
+Proof.
+    intros * upgrade_decomp state_in_version * recv_some.
+    destruct (upgrade_decomp c_version) as [m_decomp [st_cat fiber_trans]].
+    clear upgrade_decomp.
+    assert ({msg_morph C C_b p m = inr tt} + {exists m', msg_morph C C_b p m = inl m'})
+    as m_destruct.
+    { destruct (msg_morph C C_b p m) eqn:H_m.
+      - now right. 
+      - left. now destruct u. }
+    destruct m_destruct as [call_to_version | call_to_upgrade].
+    (* either it's a call to this current version ... *)
+    +   left.
+        apply (m_decomp m) in call_to_version.
+        destruct call_to_version as [m_f call_to_version].
+        pose proof (recv_coherence (C_f c_version) C i chain ctx cstate_f (Some m_f)) as Cf_recv.
+        cbn in Cf_recv. 
+        unfold i in *.
+        rewrite <- call_to_version in Cf_recv.
+        rewrite <- state_in_version in Cf_recv.
+        rewrite recv_some in Cf_recv.
+        destruct (receive (C_f c_version) chain ctx cstate_f (Some m_f)) eqn:H_recvf in Cf_recv.
+        -   destruct t as [cstate_f' l].
+            cbn in Cf_recv.
+            now exists cstate_f'.
+        -   cbn in Cf_recv.
+            inversion Cf_recv.
+    (* or it's a call to upgrade *)
+    +   right.
+        destruct call_to_upgrade as [m' call_to_upgrade].
+        exists (extract_version m').
+        now exists (new_version_state c_version m' cstate_f).
+Qed.
+
+End Upgradeability.
 
 End ContractMorphisms.
