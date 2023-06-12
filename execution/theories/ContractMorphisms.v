@@ -518,7 +518,7 @@ Definition state_exact (f_state : State3) (i : ContractMorphism C1 C2) (p : Cont
     state_morph C2 C3_b p st = f_state.
 
 (** Exactness *)
-Definition exact_triple_cm {f_state : State3} (i : ContractMorphism C1 C2) (p : ContractMorphism C2 C3_b) := 
+Definition exact_triple_cm (f_state : State3) (i : ContractMorphism C1 C2) (p : ContractMorphism C2 C3_b) := 
     is_weak_inj_cm i /\ 
     is_weak_surj_cm p /\
     msg_exact i p /\ 
