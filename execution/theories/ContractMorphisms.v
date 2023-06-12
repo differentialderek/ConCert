@@ -471,62 +471,6 @@ Admitted.
 End Isomoprhism.
 
 
-Section Exactness.
-(** Extend the contract's type so it can be the recipient of a morphism. *)
-Section PointedContract.
-Context `{Serializable Setup} `{Serializable Msg} `{Serializable State} `{Serializable Error}.
-
-Definition Msg' := (Msg + unit)%type.
-
-Definition receive' 
-    (C : Contract Setup Msg State Error)
-    (c : Chain) 
-    (ctx : ContractCallContext) 
-    (st : State) 
-    (op_msg : option Msg') : result (State  * list ActionBody) Error := 
-    match op_msg with 
-    | None => receive C c ctx st None 
-    | Some msg' => 
-        match msg' with 
-        | inl msg => receive C c ctx st (Some msg) 
-        | inr _ => Ok (st, nil)
-        end 
-    end.
-
-Definition pointed_contract (C : Contract Setup Msg State Error) := 
-    build_contract (init C) (receive' C).
-
-End PointedContract.
-
-Context `{Serializable Setup1} `{Serializable Msg1} `{Serializable State1} `{Serializable Error1}
-        `{Serializable Setup2} `{Serializable Msg2} `{Serializable State2} `{Serializable Error2}
-        `{Serializable Setup3} `{Serializable Msg3} `{Serializable State3} `{Serializable Error3}
-        {C1 : Contract Setup1 Msg1 State1 Error1} 
-        {C2 : Contract Setup2 Msg2 State2 Error2}
-        {C3 : Contract Setup3 Msg3 State3 Error3}.
-
-Definition C3_b := pointed_contract C3.
-
-Definition msg_exact (i : ContractMorphism C1 C2) (p : ContractMorphism C2 C3_b) := 
-    forall m,
-    msg_morph C2 C3_b p m = inr tt <-> 
-    (exists m', m = msg_morph C1 C2 i m').
-
-Definition state_exact (f_state : State3) (i : ContractMorphism C1 C2) (p : ContractMorphism C2 C3_b) : Prop := 
-    forall st,
-    (exists st_f, st = state_morph C1 C2 i st_f) ->
-    state_morph C2 C3_b p st = f_state.
-
-(** Exactness *)
-Definition exact_triple_cm (f_state : State3) (i : ContractMorphism C1 C2) (p : ContractMorphism C2 C3_b) := 
-    is_weak_inj_cm i /\ 
-    is_weak_surj_cm p /\
-    msg_exact i p /\ 
-    state_exact f_state i p.
-
-End Exactness.
-
-
 (** Morphism Induction: 
     A proof technique for contract morphisms which allows us to carry the relationship
     established by a contract morphism into contract_induction. *)
@@ -1035,5 +979,65 @@ Theorem weak_inj_surj_iso_cm (f : ContractMorphism C1 C2) :
 Admitted.
 
 End Equivalence.
+
+
+(** Decomposing upgradeable contracts with morphisms *)
+Section Exactness.
+
+(* First we need to be able to extend a contract's type so it can be the recipient of a morphism. *)
+Section PointedContract.
+Context `{Serializable Setup} `{Serializable Msg} `{Serializable State} `{Serializable Error}.
+
+Definition Msg' := (Msg + unit)%type.
+
+Definition receive' 
+    (C : Contract Setup Msg State Error)
+    (c : Chain) 
+    (ctx : ContractCallContext) 
+    (st : State) 
+    (op_msg : option Msg') : result (State  * list ActionBody) Error := 
+    match op_msg with 
+    | None => receive C c ctx st None 
+    | Some msg' => 
+        match msg' with 
+        | inl msg => receive C c ctx st (Some msg) 
+        | inr _ => Ok (st, nil)
+        end 
+    end.
+
+Definition pointed_contract (C : Contract Setup Msg State Error) := 
+    build_contract (init C) (receive' C).
+
+End PointedContract.
+
+Context `{Serializable Setup1} `{Serializable Msg1} `{Serializable State1} `{Serializable Error1}
+        `{Serializable Setup2} `{Serializable Msg2} `{Serializable State2} `{Serializable Error2}
+        `{Serializable Setup3} `{Serializable Msg3} `{Serializable State3} `{Serializable Error3}
+        (* consider contracts C_f (version contract), C (main contract), and C_s (the framework contract)*)
+        {C_f : Contract Setup1 Msg1 State1 Error1} 
+        {C   : Contract Setup2 Msg2 State2 Error2}
+        {C_s : Contract Setup3 Msg3 State3 Error3}.
+
+(* slightly modify C_s into C_b *)
+Definition C_b := pointed_contract C_s.
+
+Definition msg_exact (i : ContractMorphism C_f C) (p : ContractMorphism C C_b) := 
+    forall m,
+    msg_morph C C_b p m = inr tt <-> 
+    (exists m', m = msg_morph C_f C i m').
+
+Definition state_exact (f_version : State3) (i : ContractMorphism C_f C) (p : ContractMorphism C C_b) : Prop := 
+    forall st,
+    (exists st_f, st = state_morph C_f C i st_f) <->
+    state_morph C C_b p st = f_version.
+
+(** A "short exact sequence" of contracts : C_f is the *current version* of C *)
+Definition short_exact_cm (f_version : State3) (i : ContractMorphism C_f C) (p : ContractMorphism C C_b) := 
+    is_weak_inj_cm i /\ 
+    is_weak_surj_cm p /\
+    msg_exact i p /\ 
+    state_exact f_version i p.
+
+End Exactness.
 
 End ContractMorphisms.
