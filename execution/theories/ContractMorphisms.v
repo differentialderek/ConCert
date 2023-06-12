@@ -404,10 +404,21 @@ Context `{Serializable Setup1} `{Serializable Msg1} `{Serializable State1} `{Ser
 Definition is_inj {A B : Type} (f : A -> B) : Prop := 
     forall (a a' : A), f a = f a' -> a = a'.
 
-(* A morphism is an embedding if it embeds the message and storage types *)
-Definition is_inj_cm (f : ContractMorphism C1 C2) : Prop := 
+(* A morphism is a *weak embedding* if it embeds the message and storage types *)
+Definition is_weak_inj_cm (f : ContractMorphism C1 C2) : Prop := 
     is_inj (msg_morph C1 C2 f) /\
     is_inj (state_morph C1 C2 f).
+
+Definition contract_weakly_embeds : Prop := 
+    exists (f : ContractMorphism C1 C2), is_weak_inj_cm f.
+
+
+(* A morphism is an embedding if it embeds on all contract types *)
+Definition is_inj_cm (f : ContractMorphism C1 C2) : Prop := 
+    is_inj (setup_morph C1 C2 f) /\
+    is_inj (msg_morph C1 C2 f) /\
+    is_inj (state_morph C1 C2 f) /\
+    is_inj (error_morph C1 C2 f).
 
 Definition contract_embeds : Prop := 
     exists (f : ContractMorphism C1 C2), is_inj_cm f.
@@ -425,15 +436,39 @@ Context `{Serializable Setup1} `{Serializable Msg1} `{Serializable State1} `{Ser
 Definition is_surj {A B : Type} (f : A -> B) : Prop := 
     forall (b : B), exists (a : A), f a = b.
 
-Definition is_surj_cm (f : ContractMorphism C1 C2) : Prop :=
+(* A morphism is a *weak quotient* if it embeds on all contract types *)
+Definition is_weak_surj_cm (f : ContractMorphism C1 C2) : Prop :=
     is_surj (msg_morph C1 C2 f) /\
     is_surj (state_morph C1 C2 f).
+
+Definition contract_weakly_surjects : Prop := 
+    exists (f : ContractMorphism C1 C2), is_weak_surj_cm f.
+
+
+(* A morphism is a quotient if it embeds on all contract types *)
+Definition is_surj_cm (f : ContractMorphism C1 C2) : Prop :=
+    is_surj (setup_morph C1 C2 f) /\
+    is_surj (msg_morph C1 C2 f) /\
+    is_surj (state_morph C1 C2 f) /\
+    is_surj (error_morph C1 C2 f).
 
 Definition contract_surjects : Prop := 
     exists (f : ContractMorphism C1 C2), is_surj_cm f.
 
 End Surjections.
 
+Section Isomoprhism.
+Context `{Serializable Setup1} `{Serializable Msg1} `{Serializable State1} `{Serializable Error1}
+        `{Serializable Setup2} `{Serializable Msg2} `{Serializable State2} `{Serializable Error2}
+        {C1 : Contract Setup1 Msg1 State1 Error1} 
+        {C2 : Contract Setup2 Msg2 State2 Error2}.
+
+Theorem inj_surj_iso_cm (f : ContractMorphism C1 C2) : 
+    is_inj_cm f /\ is_surj_cm f <-> 
+    exists (g : ContractMorphism C2 C1), is_iso_cm f g.
+Admitted.
+
+End Isomoprhism.
 
 Section Exactness.
 (** Extend the contract's type so it can be the recipient of a morphism. *)
@@ -969,5 +1004,17 @@ Definition is_equiv_cm (f : ContractMorphism C1 C2) (g : ContractMorphism C2 C1)
 
 End ContractBisimulation.
 
+Section Equivalence.
+Context `{Serializable Setup1} `{Serializable Msg1} `{Serializable State1} `{Serializable Error1}
+        `{Serializable Setup2} `{Serializable Msg2} `{Serializable State2} `{Serializable Error2}
+        {C1 : Contract Setup1 Msg1 State1 Error1} 
+        {C2 : Contract Setup2 Msg2 State2 Error2}.
+
+Theorem weak_inj_surj_iso_cm (f : ContractMorphism C1 C2) : 
+    is_weak_inj_cm f /\ is_weak_surj_cm f <-> 
+    exists (g : ContractMorphism C2 C1), is_equiv_cm f g.
+Admitted.
+
+End Equivalence.
 
 End ContractMorphisms.
