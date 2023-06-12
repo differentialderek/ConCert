@@ -1011,24 +1011,26 @@ Definition pointed_contract (C : Contract Setup Msg State Error) :=
 End PointedContract.
 
 (** Now consider an upgradeable contract C, which can be decomposed by: 
-    1. a parameterized family of fiber contracts (C_f version), which are individual versions of the contract, and
+    1. a parameterized family of versioned contracts (C_f version), which are individual versions of the contract, and
     2. and a skeleton C_skel, which governs upgradeability *)
 Context `{Serializable Setup}   `{Serializable Msg}   `{Serializable State}   `{Serializable Error}
         `{Serializable Setup_b} `{Serializable Msg_b} `{Serializable State_b} `{Serializable Error_b}
-        (* State_b contains the information relevant to indicate the current version (fiber) *)
+        (* State_b contains the information relevant to indicate the current version *)
         `{setup_f : State_b -> Type} `{forall (v : State_b), Serializable (setup_f v)}
         `{msg_f   : State_b -> Type} `{forall (v : State_b), Serializable (msg_f v)}
         `{state_f : State_b -> Type} `{forall (v : State_b), Serializable (state_f v)}
         `{error_f : State_b -> Type} `{forall (v : State_b), Serializable (error_f v)}
         (* Now consider a contract C ... *)
-        {C   : Contract Setup   Msg   State   Error}
-        (* the family of its fiber contracts ... *)
+        {C   : Contract Setup Msg State Error}
+        (* the family of its versioned contracts ... *)
         {C_f : forall (v : State_b), Contract (setup_f v) (msg_f v) (state_f v) (error_f v)}
         (* and its skeleton. *)
         {C_skel : Contract Setup_b Msg_b State_b Error_b}
-        (* from a msg into the skeleton we can extract the new, upgraded fiber *)
+        (* from a msg into the skeleton we can extract the new, upgraded version *)
         {extract_version : Msg_b -> State_b}
-        {new_version_state : forall old_v msg, state_f old_v -> state_f (extract_version msg)}.
+        {new_version_state : forall old_v msg, state_f old_v -> state_f (extract_version msg)}
+        {msg_required : forall chain ctx prev_state,
+            exists e, receive C chain ctx prev_state None = Err e}.
 
 (* slightly modify C_s into C_b, the "base" contract *)
 Definition C_b := pointed_contract C_skel.
@@ -1039,15 +1041,28 @@ Definition msg_decomposable c_version (i : ContractMorphism (C_f c_version) C) (
     msg_morph C C_b p m = inr tt <-> 
     (exists m', m = msg_morph (C_f c_version) C i m').
 
-(** All possible states of C can be categorized by what fiber they belong to *)
+(** All possible states of C can be categorized by what version they belong to *)
 Definition states_categorized c_version (i : ContractMorphism (C_f c_version) C) (p : ContractMorphism C C_b) := 
     forall st,
     (exists st_f, st = state_morph (C_f c_version) C i st_f) <->
     state_morph C C_b p st = c_version.
 
+(** All initial states are versioned *)
+Definition is_versioned 
+    (i_param : forall c_version, ContractMorphism (C_f c_version) C)
+    cstate := 
+    exists c_version cstate_f,
+    cstate = state_morph (C_f c_version) C (i_param c_version) cstate_f.
+
+Definition init_versioned 
+    (i_param : forall c_version, ContractMorphism (C_f c_version) C) := 
+    forall init_state chain ctx setup,
+    init C chain ctx setup = Ok init_state ->
+    is_versioned i_param init_state.
+
 (** If we call upgrade, then the state changes as described 
         by the functions extract_version and new_version_state *)
-Definition fiber_transition 
+Definition version_transition 
     old_v 
     (i_param : forall c_version, ContractMorphism (C_f c_version) C)
     (p : ContractMorphism C C_b) := 
@@ -1070,11 +1085,14 @@ Definition upgradeability_decomposition
     (i_param : forall c_version, ContractMorphism (C_f c_version) C) 
     (p : ContractMorphism C C_b) := 
     (* Forall versions of a contract C, *)
+    init_versioned i_param /\
     forall c_version,
     let i := i_param c_version in 
     msg_decomposable c_version i p /\ 
     states_categorized c_version i p /\ 
-    fiber_transition c_version i_param p.
+    version_transition c_version i_param p.
+
+
 
 (* Upgradeability, described by short exact sequences of contracts *)
 Theorem upgradeability
@@ -1097,11 +1115,12 @@ Theorem upgradeability
     (* it either stays within this version *)
     (exists cstate_f', new_state = state_morph (C_f c_version) C i cstate_f') \/
     (* it moves onto a new version *)
-    (exists c_version' cstate_f', 
+    (exists c_version' cstate_f',
     new_state = state_morph (C_f c_version') C (i_param c_version') cstate_f').
 Proof.
     intros * upgrade_decomp state_in_version * recv_some.
-    destruct (upgrade_decomp c_version) as [m_decomp [st_cat fiber_trans]].
+    destruct upgrade_decomp as [init_v upgrade_decomp].
+    destruct (upgrade_decomp c_version) as [m_decomp [st_cat v_trans]].
     clear upgrade_decomp.
     assert ({msg_morph C C_b p m = inr tt} + {exists m', msg_morph C C_b p m = inl m'})
     as m_destruct.
@@ -1131,6 +1150,59 @@ Proof.
         exists (extract_version m').
         now exists (new_version_state c_version m' cstate_f).
 Qed.
+
+
+Theorem upgradeability_invariant
+    (* Consider family of embeddings, and *)
+    (i_param : forall c_version, ContractMorphism (C_f c_version) C) 
+    (* a projection onto the skeleton C_b. *)
+    (p : ContractMorphism C C_b) : 
+    (* Then forall reachable states ... *)
+    forall bstate caddr (trace : ChainTrace empty_state bstate),
+    (* where C is at caddr with state cstate, *)
+    env_contracts bstate caddr = Some (C : WeakContract) -> 
+    exists (cstate : State), 
+    contract_state bstate caddr = Some cstate /\
+    (* if the contract's upgradeability can be decomposed *)
+    (upgradeability_decomposition i_param p ->
+    (* then every contract state cstate is versioned *)
+    is_versioned i_param cstate).
+Proof.
+    intros * c_at_caddr.
+    contract_induction; auto.
+    (* deployment of the contract *)
+    -   intros * ? ? ? upgrade_decomp.
+        destruct upgrade_decomp as [init_v _].
+        now apply (init_v result chain ctx setup).
+    (* nonrecursive call *)
+    -   intros ? ? ? ? ? ? ? ? ? ? ? ? ? ? ? upgrade_decomp.
+        apply IH in upgrade_decomp as is_version.
+        destruct is_version as [prev_v [prev_st_f is_version]].
+        destruct msg.
+        2:{ now destruct (msg_required chain ctx prev_state). }
+        pose proof (upgradeability i_param p prev_state prev_v prev_st_f upgrade_decomp is_version chain ctx m new_state new_acts receive_some)
+        as next_version.
+        destruct next_version as [same_v | new_v]; unfold is_versioned.
+        +   destruct same_v as [cstate_v state_in_v].
+            now exists prev_v, cstate_v.
+        +   destruct new_v as [new_v [cstate_v state_in_v]].
+            now exists new_v, cstate_v.
+    -   intros ? ? ? ? ? ? ? ? ? ? ? ? ? ? ? ? ? upgrade_decomp.
+        apply IH in upgrade_decomp as is_version.
+        destruct is_version as [prev_v [prev_st_f is_version]].
+        destruct msg.
+        2:{ now destruct (msg_required chain ctx prev_state). }
+        pose proof (upgradeability i_param p prev_state prev_v prev_st_f upgrade_decomp is_version chain ctx m new_state new_acts receive_some)
+        as next_version.
+        destruct next_version as [same_v | new_v]; unfold is_versioned.
+        +   destruct same_v as [cstate_v state_in_v].
+            now exists prev_v, cstate_v.
+        +   destruct new_v as [new_v [cstate_v state_in_v]].
+            now exists new_v, cstate_v.
+    -   intros. 
+        solve_facts.
+Qed.
+
 
 End Upgradeability.
 
