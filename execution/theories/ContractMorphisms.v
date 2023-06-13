@@ -1025,12 +1025,7 @@ Context `{Serializable Setup}   `{Serializable Msg}   `{Serializable State}   `{
         (* the family of its versioned contracts ... *)
         {C_f : forall (v : State_b), Contract (setup_f v) (msg_f v) (state_f v) (error_f v)}
         (* and its skeleton. *)
-        {C_skel : Contract Setup_b Msg_b State_b Error_b}
-        (* from a msg into the skeleton we can extract the new, upgraded version *)
-        {extract_version : Msg_b -> State_b}
-        {new_version_state : forall old_v msg, state_f old_v -> state_f (extract_version msg)}
-        {msg_required : forall chain ctx prev_state,
-            exists e, receive C chain ctx prev_state None = Err e}.
+        {C_skel : Contract Setup_b Msg_b State_b Error_b}.
 
 (* slightly modify C_s into C_b, the "base" contract *)
 Definition C_b := pointed_contract C_skel.
@@ -1065,7 +1060,9 @@ Definition init_versioned
 Definition version_transition 
     old_v 
     (i_param : forall c_version, ContractMorphism (C_f c_version) C)
-    (p : ContractMorphism C C_b) := 
+    (p : ContractMorphism C C_b)
+    (extract_version : Msg_b -> State_b)
+    (new_version_state : forall old_v msg, state_f old_v -> state_f (extract_version msg)) := 
     forall cstate cstate_f,
     (* forall states of version old_v *)
     cstate = state_morph (C_f old_v) C (i_param old_v) cstate_f ->
@@ -1079,33 +1076,39 @@ Definition version_transition
     new_state = 
         state_morph (C_f new_v) C (i_param new_v) (new_version_state old_v msg' cstate_f).
 
+Definition msg_required := forall chain ctx prev_state,
+    exists e, receive C chain ctx prev_state None = Err e.
+        
 (** The definition of an upgradeable contract characterized by C_f, C_b, i, 
         and a sequence of morphisms C_f version -> C ->> C_b *)
 Definition upgradeability_decomposition 
     (i_param : forall c_version, ContractMorphism (C_f c_version) C) 
-    (p : ContractMorphism C C_b) := 
+    (p : ContractMorphism C C_b)
+    (extract_version : Msg_b -> State_b)
+    (new_version_state : forall old_v msg, state_f old_v -> state_f (extract_version msg)) := 
     (* Forall versions of a contract C, *)
+    msg_required /\
     init_versioned i_param /\
     forall c_version,
     let i := i_param c_version in 
     msg_decomposable c_version i p /\ 
     states_categorized c_version i p /\ 
-    version_transition c_version i_param p.
-
-
+    version_transition c_version i_param p extract_version new_version_state.
 
 (* Upgradeability, described by short exact sequences of contracts *)
-Theorem upgradeability
+Theorem upgradeability_decomposed
     (* Consider family of embeddings, and *)
     (i_param : forall c_version, ContractMorphism (C_f c_version) C) 
     (* a projection onto the skeleton C_b. *)
-    (p : ContractMorphism C C_b) : 
+    (p : ContractMorphism C C_b)
+    (extract_version : Msg_b -> State_b)
+    (new_version_state : forall old_v msg, state_f old_v -> state_f (extract_version msg)) : 
     (* forall contract states and corresponding contract versions, *)
     forall cstate c_version cstate_f,
     (* with i, the embedding for version c_version, ... *)
     let i := i_param c_version in 
     (* if C_f -> C ->> C_b is the decomposition of a contract's upgradeability ... *)
-    upgradeability_decomposition i_param p ->
+    upgradeability_decomposition i_param p extract_version new_version_state ->
     (* and cstate is in the image of cstate_f under the embedding i
         (meaning that cstate has version c_version) ... *)
     cstate = state_morph (C_f c_version) C i cstate_f ->
@@ -1119,7 +1122,7 @@ Theorem upgradeability
     new_state = state_morph (C_f c_version') C (i_param c_version') cstate_f').
 Proof.
     intros * upgrade_decomp state_in_version * recv_some.
-    destruct upgrade_decomp as [init_v upgrade_decomp].
+    destruct upgrade_decomp as [msg_required [init_v upgrade_decomp]].
     destruct (upgrade_decomp c_version) as [m_decomp [st_cat v_trans]].
     clear upgrade_decomp.
     assert ({msg_morph C C_b p m = inr tt} + {exists m', msg_morph C C_b p m = inl m'})
@@ -1152,11 +1155,13 @@ Proof.
 Qed.
 
 
-Theorem upgradeability_invariant
+Theorem versioned_invariant
     (* Consider family of embeddings, and *)
     (i_param : forall c_version, ContractMorphism (C_f c_version) C) 
     (* a projection onto the skeleton C_b. *)
-    (p : ContractMorphism C C_b) : 
+    (p : ContractMorphism C C_b)
+    (extract_version : Msg_b -> State_b)
+    (new_version_state : forall old_v msg, state_f old_v -> state_f (extract_version msg)) :  
     (* Then forall reachable states ... *)
     forall bstate caddr (trace : ChainTrace empty_state bstate),
     (* where C is at caddr with state cstate, *)
@@ -1164,7 +1169,7 @@ Theorem upgradeability_invariant
     exists (cstate : State), 
     contract_state bstate caddr = Some cstate /\
     (* if the contract's upgradeability can be decomposed *)
-    (upgradeability_decomposition i_param p ->
+    (upgradeability_decomposition i_param p extract_version new_version_state ->
     (* then every contract state cstate is versioned *)
     is_versioned i_param cstate).
 Proof.
@@ -1172,33 +1177,39 @@ Proof.
     contract_induction; auto.
     (* deployment of the contract *)
     -   intros * ? ? ? upgrade_decomp.
-        destruct upgrade_decomp as [init_v _].
+        destruct upgrade_decomp as [_ [init_v _]].
         now apply (init_v result chain ctx setup).
     (* nonrecursive call *)
     -   intros ? ? ? ? ? ? ? ? ? ? ? ? ? ? ? upgrade_decomp.
         apply IH in upgrade_decomp as is_version.
         destruct is_version as [prev_v [prev_st_f is_version]].
+        pose proof upgrade_decomp as upgrade_decomp'.
+        destruct upgrade_decomp as [msg_required [init_v upgrade_decomp]].
         destruct msg.
         2:{ now destruct (msg_required chain ctx prev_state). }
-        pose proof (upgradeability i_param p prev_state prev_v prev_st_f upgrade_decomp is_version chain ctx m new_state new_acts receive_some)
+        pose proof (upgradeability_decomposed i_param p extract_version new_version_state prev_state prev_v prev_st_f upgrade_decomp' is_version chain ctx m new_state new_acts receive_some)
         as next_version.
         destruct next_version as [same_v | new_v]; unfold is_versioned.
         +   destruct same_v as [cstate_v state_in_v].
             now exists prev_v, cstate_v.
         +   destruct new_v as [new_v [cstate_v state_in_v]].
             now exists new_v, cstate_v.
+    (* recursive call *)
     -   intros ? ? ? ? ? ? ? ? ? ? ? ? ? ? ? ? ? upgrade_decomp.
         apply IH in upgrade_decomp as is_version.
         destruct is_version as [prev_v [prev_st_f is_version]].
+        pose proof upgrade_decomp as upgrade_decomp'.
+        destruct upgrade_decomp as [msg_required [init_v upgrade_decomp]].
         destruct msg.
         2:{ now destruct (msg_required chain ctx prev_state). }
-        pose proof (upgradeability i_param p prev_state prev_v prev_st_f upgrade_decomp is_version chain ctx m new_state new_acts receive_some)
+        pose proof (upgradeability_decomposed i_param p extract_version new_version_state prev_state prev_v prev_st_f upgrade_decomp' is_version chain ctx m new_state new_acts receive_some)
         as next_version.
         destruct next_version as [same_v | new_v]; unfold is_versioned.
         +   destruct same_v as [cstate_v state_in_v].
             now exists prev_v, cstate_v.
         +   destruct new_v as [new_v [cstate_v state_in_v]].
             now exists new_v, cstate_v.
+    (* solve facts *)
     -   intros. 
         solve_facts.
 Qed.
