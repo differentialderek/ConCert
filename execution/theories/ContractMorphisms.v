@@ -757,7 +757,8 @@ Proof.
         as cstep.
         {   destruct l as [s_chain s_ctx s_msg s_new_acts s_recv].
             set (seq_msg := option_map msg_morph s_msg).
-            apply (build_contract_step C2 (state_morph mid) (state_morph to) s_chain s_ctx seq_msg s_new_acts).
+            apply (build_contract_step C2 (state_morph mid) (state_morph to) 
+                s_chain s_ctx seq_msg s_new_acts).
             (* now apply coherence *)
             unfold seq_msg.
             rewrite <- (recv_coherence s_chain s_ctx mid s_msg).
@@ -998,7 +999,8 @@ Proof.
     cbn.
     intros * step.
     destruct step as [seq_chain seq_ctx seq_msg seq_new_acts recv_step].
-    apply (build_contract_step C2 (state_morph state1) (state_morph state2) seq_chain seq_ctx (option_map msg_morph seq_msg) seq_new_acts).
+    apply (build_contract_step C2 (state_morph state1) (state_morph state2) seq_chain seq_ctx 
+        (option_map msg_morph seq_msg) seq_new_acts).
     rewrite <- r_coh.
     unfold result_functor.
     destruct (receive C1 seq_chain seq_ctx state1 seq_msg);
@@ -1139,7 +1141,8 @@ Definition pointed_contract (C : Contract Setup Msg State Error) :=
 End PointedContract.
 
 (** Now consider an upgradeable contract C, which can be decomposed by: 
-    1. a parameterized family of versioned contracts (C_f version), which are individual versions of the contract, and
+    1. a parameterized family of versioned contracts (C_f version), which are individual versions 
+        of the contract, and
     2. and a skeleton C_skel, which governs upgradeability 
 *)
 Context `{Serializable Setup}   `{Serializable Msg}   `{Serializable State}   `{Serializable Error}
@@ -1322,7 +1325,8 @@ Proof.
         destruct upgrade_decomp as [msg_required [init_v upgrade_decomp]].
         destruct msg.
         2:{ now destruct (msg_required chain ctx prev_state). }
-        pose proof (upgradeability_decomposed i_param p extract_version new_version_state prev_state prev_v prev_st_f upgrade_decomp' is_version chain ctx m new_state new_acts receive_some)
+        pose proof (upgradeability_decomposed i_param p extract_version new_version_state prev_state prev_v 
+            prev_st_f upgrade_decomp' is_version chain ctx m new_state new_acts receive_some)
         as next_version.
         destruct next_version as [same_v | new_v]; unfold is_versioned.
         +   destruct same_v as [cstate_v state_in_v].
@@ -1337,7 +1341,8 @@ Proof.
         destruct upgrade_decomp as [msg_required [init_v upgrade_decomp]].
         destruct msg.
         2:{ now destruct (msg_required chain ctx prev_state). }
-        pose proof (upgradeability_decomposed i_param p extract_version new_version_state prev_state prev_v prev_st_f upgrade_decomp' is_version chain ctx m new_state new_acts receive_some)
+        pose proof (upgradeability_decomposed i_param p extract_version new_version_state prev_state prev_v 
+            prev_st_f upgrade_decomp' is_version chain ctx m new_state new_acts receive_some)
         as next_version.
         destruct next_version as [same_v | new_v]; unfold is_versioned.
         +   destruct same_v as [cstate_v state_in_v].
