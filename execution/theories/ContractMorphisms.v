@@ -770,7 +770,7 @@ Qed.
 End MorphismInduction.
 
 
-(* Contract trace morphisms, or functions between contract traces *)
+(** Contract trace morphisms, or functions between contract traces *)
 Section ContractTraceMorphism.
 Context `{Serializable Setup1} `{Serializable Msg1} `{Serializable State1} `{Serializable Error1}
         `{Serializable Setup2} `{Serializable Msg2} `{Serializable State2} `{Serializable Error2}.
@@ -1083,7 +1083,7 @@ Context `{Serializable Setup1} `{Serializable Msg1} `{Serializable State1} `{Ser
         {C1 : Contract Setup1 Msg1 State1 Error1} 
         {C2 : Contract Setup2 Msg2 State2 Error2}.
 
-(* A bisimulation of contracts, or an isomorphism of contract traces *)
+(** A bisimulation of contracts, or an isomorphism of contract traces *)
 Definition is_iso_ctm 
     (m1 : ContractTraceMorphism C1 C2) (m2 : ContractTraceMorphism C2 C1) := 
     compose_ctm m2 m1 = id_ctm C1 /\
@@ -1141,9 +1141,9 @@ Definition pointed_contract (C : Contract Setup Msg State Error) :=
 End PointedContract.
 
 (** Now consider an upgradeable contract C, which can be decomposed by: 
-    1. a parameterized family of versioned contracts (C_f version), which are individual versions 
+    1. A parameterized family of versioned contracts (C_f version), which are individual versions 
         of the contract, and
-    2. and a skeleton C_skel, which governs upgradeability 
+    2. A skeleton C_skel, which governs upgradeability 
 *)
 Context `{Serializable Setup}   `{Serializable Msg}   `{Serializable State}   `{Serializable Error}
         `{Serializable Setup_b} `{Serializable Msg_b} `{Serializable State_b} `{Serializable Error_b}
