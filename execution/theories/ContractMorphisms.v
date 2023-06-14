@@ -17,8 +17,10 @@
 
     Contract morphisms have associated results to be used alongside contract_induction:
     1. left_cm_induction : for (f : C1 -> C2), all reachable states of C1 have a corresponding
-        reachable state of C2, related by f.
-    2. right_cm_induction : for (f : C1 -> C2), all contract traces of C1 have a corresponding trace of C2
+        reachable state of C2, related by f. 
+        To be used when inducting on C1, hence "left".
+    2. right_cm_induction : for (f : C1 -> C2), all contract traces of C1 have a corresponding trace of C2.
+        To be used when inducting on C2, hence "right".
 
     Finally, contract morphisms can be used to specify, define, and decompose upgradeable contracts, 
     with the following results:
