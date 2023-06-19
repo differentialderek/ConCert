@@ -1350,11 +1350,275 @@ Proof.
         +   destruct new_v as [new_v [cstate_v state_in_v]].
             now exists new_v, cstate_v.
     (* solve facts *)
-    -   intros. 
+    -   intros.
         solve_facts.
 Qed.
 
 End Upgradeability.
+
+
+(** A contract morphism can be made into a weak contract morphism *)
+Section WeakContractMorphism.
+
+(** the Definition *)
+Record WeakContractMorphism (W1 W2 : WeakContract) := 
+    build_wc_morphism {
+        (* the components of a morphism f *)
+        wc_setup_morph : SerializedValue -> SerializedValue ;
+        wc_msg_morph   : SerializedValue -> SerializedValue ;
+        wc_state_morph : SerializedValue -> SerializedValue ;
+        wc_error_morph : SerializedValue -> SerializedValue ;
+        (* coherence conditions *)
+        wc_init_coherence : forall c ctx s, 
+            result_functor wc_state_morph wc_error_morph 
+                (wc_init W1 c ctx s) = 
+            wc_init W2 c ctx (wc_setup_morph s) ;
+        wc_recv_coherence : forall c ctx st op_msg, 
+            result_functor (fun '(st, l) => (wc_state_morph st, l)) wc_error_morph 
+                (wc_receive W1 c ctx st op_msg) = 
+            wc_receive W2 c ctx (wc_state_morph st) (option_map wc_msg_morph op_msg) ; 
+}.
+
+
+Section WeakMorphismComposition.
+Context {W1 W2 W3 : WeakContract}.
+
+(** Composition *)
+Lemma wc_compose_init_coh (g : WeakContractMorphism W2 W3) (f : WeakContractMorphism W1 W2) : 
+    let state_morph' := (compose (wc_state_morph W2 W3 g) (wc_state_morph W1 W2 f)) in 
+    let error_morph' := (compose (wc_error_morph W2 W3 g) (wc_error_morph W1 W2 f)) in 
+    let setup_morph' := (compose (wc_setup_morph W2 W3 g) (wc_setup_morph W1 W2 f)) in 
+    forall c ctx s, 
+        result_functor state_morph' error_morph'
+            (wc_init W1 c ctx s) = 
+        wc_init W3 c ctx (setup_morph' s).
+Proof.
+    intros.
+    unfold setup_morph'.
+    cbn.
+    rewrite <- (wc_init_coherence W2 W3 g).
+    rewrite <- (wc_init_coherence W1 W2 f).
+    unfold result_functor.
+    now destruct (wc_init W1 c ctx s).
+Qed.
+
+Lemma wc_compose_recv_coh (g : WeakContractMorphism W2 W3) (f : WeakContractMorphism W1 W2) : 
+    let state_morph' := (compose (wc_state_morph W2 W3 g) (wc_state_morph W1 W2 f)) in 
+    let error_morph' := (compose (wc_error_morph W2 W3 g) (wc_error_morph W1 W2 f)) in 
+    let msg_morph'   := (compose (wc_msg_morph   W2 W3 g) (wc_msg_morph   W1 W2 f)) in 
+    forall c ctx st op_msg, 
+        result_functor 
+            (fun '(st, l) => (state_morph' st, l)) error_morph' 
+            (wc_receive W1 c ctx st op_msg) = 
+        wc_receive W3 c ctx (state_morph' st) (option_map msg_morph' op_msg).
+Proof.
+    intros.
+    pose proof (wc_recv_coherence W2 W3 g).
+    pose proof (wc_recv_coherence W1 W2 f).
+    unfold state_morph', msg_morph'.
+    cbn.
+    replace (option_map (compose (wc_msg_morph W2 W3 g) (wc_msg_morph W1 W2 f)) op_msg) 
+    with (option_map (wc_msg_morph W2 W3 g) (option_map (wc_msg_morph W1 W2 f) op_msg)).
+    2:{ now destruct op_msg. }
+    rewrite <- H.
+    rewrite <- H0.
+    unfold result_functor.
+    now destruct (wc_receive W1 c ctx st op_msg).
+Qed.
+
+(** Composition *)
+Definition compose_wcm (g : WeakContractMorphism W2 W3) (f : WeakContractMorphism W1 W2) :
+    WeakContractMorphism W1 W3 := {|
+    (* the components *)
+    wc_msg_morph   := compose (wc_msg_morph   W2 W3 g) (wc_msg_morph   W1 W2 f) ;
+    wc_setup_morph := compose (wc_setup_morph W2 W3 g) (wc_setup_morph W1 W2 f) ;
+    wc_state_morph := compose (wc_state_morph W2 W3 g) (wc_state_morph W1 W2 f) ;
+    wc_error_morph := compose (wc_error_morph W2 W3 g) (wc_error_morph W1 W2 f) ;
+    (* the coherence results *)
+    wc_init_coherence := wc_compose_init_coh g f ;
+    wc_recv_coherence := wc_compose_recv_coh g f ;
+    |}.
+
+End WeakMorphismComposition.
+
+
+Section IdentityWCM.
+Definition id_wcm (W : WeakContract) : WeakContractMorphism W W.
+Proof.
+    apply (build_wc_morphism W W id id id id).
+    -   intros.
+        unfold result_functor.
+        destruct (wc_init W c ctx s) eqn:H_wc; auto.
+    -   intros.
+        unfold result_functor, option_map.
+        destruct (wc_receive W c ctx st op_msg) eqn:H_wc.
+        +   destruct t.
+            destruct op_msg; auto.
+        +   destruct op_msg; auto.
+Defined.
+
+Context {W1 W2 : WeakContract}.
+Definition is_iso_wcm (f : WeakContractMorphism W1 W2) (g : WeakContractMorphism W2 W1) :=
+    compose_wcm g f = id_wcm W1 /\ 
+    compose_wcm f g = id_wcm W2.
+
+End IdentityWCM.
+
+Definition wc_isomorphic (W1 W2 : WeakContract) :=
+    exists (f : WeakContractMorphism W1 W2) (g : WeakContractMorphism W2 W1),
+    is_iso_wcm f g.
+
+Section WCMUtils.
+Context {W1 W2 : WeakContract}.
+
+Lemma eq_wcm : 
+    forall (f g : WeakContractMorphism W1 W2),
+    (* if the components are equal ... *)
+    (wc_setup_morph W1 W2 f) = (wc_setup_morph W1 W2 g) -> 
+    (wc_msg_morph W1 W2 f) = (wc_msg_morph W1 W2 g) -> 
+    (wc_state_morph W1 W2 f) = (wc_state_morph W1 W2 g) -> 
+    (wc_error_morph W1 W2 f) = (wc_error_morph W1 W2 g) -> 
+    (* ... then the morphisms are equal *)
+    f = g.
+Proof.
+    intros f g.
+    destruct f, g.
+    cbn.
+    intros msg_eq set_eq st_eq err_eq.
+    subst.
+    f_equal;
+    apply proof_irrelevance.
+Qed.
+
+End WCMUtils.
+
+
+Section CMtoWCM.
+
+Context `{Serializable Setup1} `{Serializable Msg1} `{Serializable State1} `{Serializable Error1}
+        `{Serializable Setup2} `{Serializable Msg2} `{Serializable State2} `{Serializable Error2}
+        {C1 : Contract Setup1 Msg1 State1 Error1}
+        {C2 : Contract Setup2 Msg2 State2 Error2}.
+
+Definition serialize_fn `{Serializable A} `{Serializable B} 
+    (f : A -> B) (s : SerializedValue) : SerializedValue := 
+    match deserialize s : option (A + unit) with 
+    | Some x => 
+        match x with
+        | inl a => serialize (inl (f a))
+        | inr _ => serialize (inr tt)
+        end 
+    | None => serialize (inr tt)
+    end.
+
+Lemma serialize_fn_compose `{Serializable A} `{Serializable B} `{Serializable C} : 
+    forall (g : B -> C) (f : A -> B),
+    compose (serialize_fn g) (serialize_fn f) = serialize_fn (compose g f).
+Proof.
+    intros.
+    apply functional_extensionality.
+    intro s.
+    unfold serialize_fn, compose.
+    destruct (deserialize s) eqn:H_des.
+    -   destruct s0.
+        +   replace (deserialize (serialize (inl (f a)))) with (Some (inl (f a)) : option (B + unit));
+            auto.
+            now rewrite <- (deserialize_serialize (inl (f a) : B + unit)).
+        +   replace (deserialize (serialize (inr tt))) with (Some (inr tt) : option (B + unit)); auto.
+    -   replace (deserialize (serialize (inr tt))) with (Some (inr tt) : option (B + unit)); auto.
+Qed.
+
+(* take a contract morphism to a weak contract morphism *)
+Definition cm_to_wcm_init_coh (cm : ContractMorphism C1 C2) : 
+    let wc_state_morph := serialize_fn (state_morph C1 C2 cm) in 
+    let wc_error_morph := serialize_fn (error_morph C1 C2 cm) in 
+    let wc_setup_morph := serialize_fn (setup_morph C1 C2 cm) in 
+    let W1 := (contract_to_weak_contract C1) in 
+    let W2 := (contract_to_weak_contract C2) in 
+    forall c ctx s, 
+    result_functor wc_state_morph wc_error_morph 
+        (wc_init W1 c ctx s) = 
+    wc_init W2 c ctx (wc_setup_morph s).
+Proof.
+    intros.
+    unfold result_functor.
+    pose proof (init_coherence C1 C2 cm c ctx).
+Admitted.
+
+Definition cm_to_wcm_recv_coh (cm : ContractMorphism C1 C2) : 
+    let wc_state_morph := serialize_fn (state_morph C1 C2 cm) in 
+    let wc_error_morph := serialize_fn (error_morph C1 C2 cm) in 
+    let wc_msg_morph := serialize_fn (msg_morph C1 C2 cm) in 
+    let W1 := (contract_to_weak_contract C1) in 
+    let W2 := (contract_to_weak_contract C2) in 
+    forall c ctx st op_msg, 
+    result_functor (fun '(st, l) => (wc_state_morph st, l)) wc_error_morph 
+        (wc_receive W1 c ctx st op_msg) = 
+    wc_receive W2 c ctx (wc_state_morph st) (option_map wc_msg_morph op_msg).
+Admitted.
+
+Definition cm_to_wcm (cm : ContractMorphism C1 C2) : 
+    WeakContractMorphism (contract_to_weak_contract C1) (contract_to_weak_contract C2) := {| 
+    wc_setup_morph := serialize_fn (setup_morph C1 C2 cm) ;
+    wc_msg_morph := serialize_fn (msg_morph C1 C2 cm) ;
+    wc_state_morph := serialize_fn (state_morph C1 C2 cm) ;
+    wc_error_morph := serialize_fn (error_morph C1 C2 cm) ;
+    wc_init_coherence := cm_to_wcm_init_coh cm ;
+    wc_recv_coherence := cm_to_wcm_recv_coh cm ;
+|}.
+
+End CMtoWCM.
+
+
+Section CMtoWCMResults.
+Context `{Serializable Setup} `{Serializable Msg} `{Serializable State} `{Serializable Error}
+        {C : Contract Setup Msg State Error}.
+
+(* identity to identity *)
+Lemma serialize_fn_id `{Serializable A} :
+    serialize_fn (@id A) = id.
+Proof.
+    apply functional_extensionality.
+    intro.
+    unfold serialize_fn.
+    simpl.
+    destruct (deserialize x).
+Admitted. (* TODO or something equivalent (may need to ∆ id_wcm)*)
+
+Lemma id_cm_to_id_wcm :
+    cm_to_wcm (id_cm C) = id_wcm (contract_to_weak_contract C).
+Proof.
+    unfold cm_to_wcm, id_cm, id_wcm.
+    apply eq_wcm; 
+    cbn; 
+    apply serialize_fn_id.
+Qed.
+
+
+(* composition to composition *)
+Context `{Serializable Setup1} `{Serializable Msg1} `{Serializable State1} `{Serializable Error1}
+        `{Serializable Setup2} `{Serializable Msg2} `{Serializable State2} `{Serializable Error2}
+        `{Serializable Setup3} `{Serializable Msg3} `{Serializable State3} `{Serializable Error3}
+        {C1 : Contract Setup1 Msg1 State1 Error1} 
+        {C2 : Contract Setup2 Msg2 State2 Error2}
+        {C3 : Contract Setup3 Msg3 State3 Error3}.
+
+Lemma composition_cm_to_wcm (g : ContractMorphism C2 C3) (f : ContractMorphism C1 C2) : 
+    cm_to_wcm (compose_cm g f) = compose_wcm (cm_to_wcm g) (cm_to_wcm f).
+Proof.
+    unfold cm_to_wcm, compose_cm, compose_wcm.
+    apply eq_wcm;
+    cbn.
+    -   now rewrite (serialize_fn_compose (setup_morph C2 C3 g) (setup_morph C1 C2 f)).
+    -   now rewrite (serialize_fn_compose (msg_morph C2 C3 g) (msg_morph C1 C2 f)).
+    -   now rewrite (serialize_fn_compose (state_morph C2 C3 g) (state_morph C1 C2 f)).
+    -   now rewrite (serialize_fn_compose (error_morph C2 C3 g) (error_morph C1 C2 f)).
+Qed.
+
+End CMtoWCMResults.
+
+
+End WeakContractMorphism.
 
 
 End ContractMorphisms.

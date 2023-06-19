@@ -17,93 +17,95 @@ Axiom todo : forall {A}, A.
 Section ContractSystem.
 Context {Base : ChainBase}.
 
-(* Some inductive structure in which to organize contract systems *)
-Context {constr : Type -> Type} {names : Type -> Type}
-    {A : Type} (* to traverse constr T for any T *)
-    (* some utilities *)
-    {constr_find : forall {T} (place : A) (struct : constr T), option T}
-    {update : forall {T} (place : A) (t : T) (struct : constr T), constr T}
-    {in_constr : forall {T} (t : T) (struct : constr T), Prop}
-    {accum : forall {T}, constr T -> T} (* accumulates into a single value of T *)
-    (* for merging systems *)
-    {inner_name : forall {T}, constr T -> names T}
-    {outer_name : forall {T}, constr T -> names T}
-    {merge : forall {T}, constr T -> constr T -> names T -> constr T}
-    (* constr has an automorphism group *)
-    {constr_permutation : forall {T}, constr T -> constr T -> Prop}
-    {constr_permutation_in : forall {T} (t : T) struct struct', 
+(** Contract systems are organized via some inductive constructor, e.g. lists, trees, or forests *)
+Class Sys_Constr (sys_constr : Type -> Type) := { 
+    (* some utilities for sys_constr : find, update, in predicate, and accum *)
+    places : Type ; (* to traverse constr T for any T, e.g. nat for constr = list *)
+    constr_find : forall {T} (place : places) (struct : sys_constr T), option T ;
+    update : forall {T} (place : places) (t : T) (struct : sys_constr T), sys_constr T ;
+    in_constr : forall {T} (t : T) (struct : sys_constr T), Prop ;
+    sys_accum : forall {T}, sys_constr T -> option T ; (* accumulates into a single value of T *)
+    (* sys_constr has inner and outer merge semantics *)
+    inner_names : forall {T}, sys_constr T -> Type ;
+    outer_names : forall {T}, sys_constr T -> Type ;
+    inner_merge : forall {T} (sys1 : sys_constr T), sys_constr T -> inner_names sys1 -> sys_constr T ;
+    outer_merge : forall {T} (sys1 : sys_constr T), sys_constr T -> outer_names sys1 -> sys_constr T ;
+    (* sys_constr has an automorphism group *)
+    constr_permutation : forall {T}, sys_constr T -> sys_constr T -> Prop ;
+    constr_permutation_in : forall {T} (t : T) struct struct', 
         constr_permutation struct struct' ->
-        in_constr t struct -> in_constr t struct'}
-    (* functions between systems : constr is functorial wrt ^^ *)
-    {constr_funct : forall {T T'}, (T -> T') -> (constr T -> constr T')}
-    {constr_funct_names : forall {T T'}, (T -> T') -> (names T -> names T')}
-    {constr_funct_A : forall {T T'}, (T -> T') -> (A -> A)}
-    {constr_find_funct : forall {T T'} (f : T -> T') place struct,
+        in_constr t struct -> in_constr t struct' ;
+    (* functions between systems : sys_constr is functorial wrt most of ^^ *)
+    constr_funct : forall {T T'}, (T -> T') -> (sys_constr T -> sys_constr T') ;
+    constr_funct_A : forall {T T'}, (T -> T') -> (places -> places) ;
+    constr_find_funct : forall {T T'} (f : T -> T') place struct,
         constr_find (constr_funct_A f place) (constr_funct f struct) = 
-        option_map f (constr_find place struct)}
-    {update_funct : forall {T T'} (f : T -> T') place t struct, 
+        option_map f (constr_find place struct) ;
+    update_funct : forall {T T'} (f : T -> T') place t struct, 
         update (constr_funct_A f place) (f t) (constr_funct f struct) = 
-        constr_funct f (update place t struct)}
-    {in_constr_funct : forall {T T'} (f : T -> T') t struct,
-        in_constr t struct -> in_constr (f t) (constr_funct f struct)}
-    {inner_name_funct : forall {T T'} (f : T -> T') struct,
-        constr_funct_names f (inner_name struct) = inner_name (constr_funct f struct)}
-    {outer_name_funct : forall {T T'} (f : T -> T') struct,
-        constr_funct_names f (outer_name struct) = outer_name (constr_funct f struct)}
-    {merge_funct : forall {T T'} (f : T -> T') struct1 struct2 name,
-        merge (constr_funct f struct1) (constr_funct f struct2) (constr_funct_names f name) = 
-        constr_funct f (merge struct1 struct2 name)}.
+        constr_funct f (update place t struct) ;
+    in_constr_funct : forall {T T'} (f : T -> T') t struct,
+        in_constr t struct -> in_constr (f t) (constr_funct f struct) ;
+    (* TODO possibly add merge functoriality here too *)
+}.
+
+(* assume some system construction sys_constr *)
+Context `{Sys_Constr sys_constr}.
 
 
 (** We define a system of contracts *)
 Section SystemDefinition.
 
-(** To talk about systems we need a data structure *)
 Record GeneralizedContract := {
     addr : Address ; (* an affiliated address *)
     wc : WeakContract ; (* wc representation, to deal with polymorphism *)
 }.
 
-(** A system of contracts consists of nodes and (directed) edges
-    should reduce down to one contract ... Singleton G *)
-Definition ContractSystem := constr GeneralizedContract.
+Definition ContractSystem := sys_constr GeneralizedContract.
 
-Definition sys_deployed bstate (sys : constr GeneralizedContract) : Prop :=
+Definition sys_deployed bstate (sys : ContractSystem) : Prop :=
     forall G,
-    in_constr GeneralizedContract G sys ->
+    in_constr G sys ->
     env_contracts bstate (addr G) = Some (wc G).
 
 (** System state  *)
-Definition GeneralizedState : Type := constr (option SerializedValue).
+Definition GeneralizedState : Type := sys_constr (option SerializedValue).
 
+(* the system state is constructed with the same inductive structure as the system *)
 Definition sys_state (bstate : ChainState) (sys : ContractSystem) : GeneralizedState := 
-    constr_funct GeneralizedContract (option SerializedValue)
+    constr_funct
     (fun (gc : GeneralizedContract) => env_contract_states bstate (addr gc))
     sys.
 
-(** A msg to a system of contracts is a message and an indicator of which contract receives the msg *)
+(* use sys_accum to compress the state into a single value *)
+Definition sys_state_compressed (bstate : ChainState) (sys : ContractSystem) : option SerializedValue :=
+    match sys_accum (sys_state bstate sys) with 
+    | Some sys_accum => sys_accum 
+    | None => None 
+    end.
+
+(** System interface *)
 Record GeneralizedMsg := {
     msg : option SerializedValue ;
-    place : A ; (* the index of *which* contract gets called *)
+    place : places ; (* the index of *which* contract gets called *)
 }.
 
-(* The receive function of a contract system *)
-Definition gen_receive
-    (sys : ContractSystem)
+(* move from Generalized State to Generalized State *)
+Definition gen_receive (sys : ContractSystem)
     (c : Chain)
     (ctx : ContractCallContext)
     (g_st : GeneralizedState) (* state *)
     (g_msg : GeneralizedMsg) (* message *) :
     result (GeneralizedState * list ActionBody) SerializedValue := 
-    match constr_find GeneralizedContract (place g_msg) sys with 
+    match constr_find (place g_msg) sys with 
     | Some gc => 
-        match constr_find (option SerializedValue) (place g_msg) g_st with 
+        match constr_find (place g_msg) g_st with 
         | Some st_op => 
             match st_op with 
             | Some st => 
                 match wc_receive (wc gc) c ctx st (msg g_msg) with 
                 | Ok (new_st, new_acts) => 
-                    Ok (update (option SerializedValue) (place g_msg) (Some new_st) g_st, new_acts)
+                    Ok (update (place g_msg) (Some new_st) g_st, new_acts)
                 | Err e => Err e
                 end
             | None => Err (serialize tt)
@@ -113,25 +115,117 @@ Definition gen_receive
     | None => Err (serialize tt) (* todo .. is this ok? *)
     end.
 
-(* 
-Definition gen_receive
-    (sys : constr WeakContract)
-    (c : Chain)
-    (ctx : ContractCallContext)
-    (g_st : GeneralizedState) (* state *)
-    (g_msg : GeneralizedMsg) (* message *) :
-    result (GeneralizedState * list ActionBody) SerializedValue :=
-    do wc <- constr_find WeakContract (place g_msg) sys;
-    do st_op <- constr_find (option SerializedValue) (place g_msg) g_st;
-    match st_op with
-    | Some st =>
-        do (new_st, new_acts) <- wc_receive wc c ctx st (msg g_msg);
-        ret (update (option SerializedValue) (place g_msg) (Some new_st) g_st, new_acts)
-    | None => Err (serialize tt)
-    end.
-*)
-
 End SystemDefinition.
+
+
+(** We define various ways in which systems of contracts can be considered equivalent *)
+Section ContractSystemEquivalence.
+
+(** Firstly, a permutation is a strong notion of equality -- they are essentially "identical" *)
+Definition sys_eq (sys1 sys2 : ContractSystem) : Prop := 
+    constr_permutation sys1 sys2.
+
+(** Secondly, systems are isomorphic if they are isomorphic at every place *)
+Section Isomorphic.
+
+Record gc_iso (G1 G2 : GeneralizedContract) := {
+    gc_addr_iso : addr G1 = addr G2 ;
+    gc_wc_iso : wc_isomorphic (wc G1) (wc G2) ;
+}.
+
+Definition gc_iso_op (g1 g2 : option GeneralizedContract) : Prop := 
+    match g1 with 
+    | Some G1 => 
+        match g2 with 
+        | Some G2 => gc_iso G1 G2 
+        | None => True 
+        end 
+    | None => 
+        match g2 with 
+        | Some G2 => False
+        | None => True 
+        end
+    end.
+
+(* the contracts of sys1 and sys2 are isomorphic at every place *)
+Definition sys_isomorphic (sys1 sys2 : ContractSystem) : Prop := 
+    forall place,
+    gc_iso_op (constr_find place sys1) (constr_find place sys2).
+
+End Isomorphic.
+
+
+(** Thirdly, systems of contracts can be equivalent by bisimulation *)
+Section Bisimulation.
+
+(** The notion of a system's trace *)
+Section SystemTrace.
+Record SystemStep (sys : ContractSystem) (st1 st2 : GeneralizedState) := {
+    sys_chain : Chain ; 
+    sys_ctx : ContractCallContext ; 
+    sys_gst : GeneralizedState ;
+    sys_gmsg : GeneralizedMsg ; 
+    sys_new_acts : list ActionBody ;
+    (* receive is called successfully *)
+    sys_recv_some : gen_receive sys sys_chain sys_ctx sys_gst sys_gmsg = Ok (st2, sys_new_acts) ;
+}.
+
+Definition SystemTrace (sys : ContractSystem) :=
+    ChainedList GeneralizedState (SystemStep sys).
+
+(** Morphism of system traces *)
+Record SystemTraceMorphism (sys1 sys2 : ContractSystem) := 
+    build_st_morph {
+        (* state morphs, parameterized by states *)
+        st_gstate_morph : GeneralizedState -> GeneralizedState ;
+        (* some sort of init morph? *)
+        (* step *)
+        sysstep_morph : forall gstate1 gstate2,
+            SystemStep sys1 gstate1 gstate2 -> 
+            SystemStep sys2 (st_gstate_morph gstate1) (st_gstate_morph gstate2) ;
+    }.
+
+(* the identity system trace morphism *)
+Definition id_stm (sys : ContractSystem) : SystemTraceMorphism sys sys.
+Proof. now apply (build_st_morph sys sys id). Defined.
+
+(* composition *)
+Definition compose_stm {sys1 sys2 sys3 : ContractSystem}
+    (m2 : SystemTraceMorphism sys2 sys3) (m1 : SystemTraceMorphism sys1 sys2) : 
+    SystemTraceMorphism sys1 sys3.
+Proof.
+    apply (build_st_morph sys1 sys3 (compose (st_gstate_morph sys2 sys3 m2) (st_gstate_morph sys1 sys2 m1))).
+    intros.
+    apply (sysstep_morph sys2 sys3 m2).
+    now apply (sysstep_morph sys1 sys2 m1).
+Qed.
+
+Definition is_iso_stm {sys1 sys2 : ContractSystem}
+    (m1 : SystemTraceMorphism sys1 sys2) (m2 : SystemTraceMorphism sys2 sys1) :=
+    compose_stm m2 m1 = id_stm sys1 /\ 
+    compose_stm m1 m2 = id_stm sys2.
+
+End SystemTrace.
+
+
+(* TODO use "accum" somehow? *)
+Record SystemTraceMorphism' (sys1 sys2 : ContractSystem) := 
+    build_st_morph' {
+        (* state morphs, parameterized by states *)
+        st_gstate_morph' : GeneralizedState -> GeneralizedState ;
+        sysstep_morph' : forall gstate1 gstate2,
+            SystemStep sys1 gstate1 gstate2 -> 
+            SystemStep sys2 (st_gstate_morph' gstate1) (st_gstate_morph' gstate2) ;
+        sys_state_sync : forall (gstate1 gstate2 : GeneralizedState),
+            sys_accum gstate1 = sys_accum gstate2 ->
+            sys_accum (st_gstate_morph' gstate1) = sys_accum (st_gstate_morph' gstate2) ;
+    }.
+
+
+End Bisimulation.
+
+
+End ContractSystemEquivalence.
 
 
 (** Operations on Systems of Contracts *)
@@ -139,10 +233,14 @@ Section SystemOperations.
 
 (** Two contract systems can be merged *)
 Section SystemMerge.
+Definition system_merge_inner 
+    (sys1 sys2 : ContractSystem) (name : inner_names sys1) : ContractSystem := 
+    inner_merge sys1 sys2 name.
 
-(* TODO use inner/outer names, merge semantics *)
-Definition system_merge_inner : ContractSystem -> ContractSystem -> ContractSystem := todo.
-Definition system_merge_outer : ContractSystem -> ContractSystem -> ContractSystem := todo.
+(* {outer_merge : forall {T} (sys1 : constr T), constr T -> outer_names sys1 -> constr T} *)
+Definition system_merge_outer 
+    (sys1 sys2 : ContractSystem) (name : outer_names sys1) : ContractSystem := 
+    outer_merge sys1 sys2 name.
 
 End SystemMerge.
 
@@ -185,98 +283,14 @@ Definition edges_compose G1 G2 G3 (e1 : Edges G1 G2) (e2 : Edges G2 G3) :=
     end.
 
 (** Equivalence modulo edges ..? *)
-(* TODO quotient over a path ... ? *)
+(* quotient over a path ... ? *)
+
+(* TODO *)
+(* THIS DEFINES A NEW SYSTEM, WHERE THE INTERFACE *)
 
 End SystemQuotient.
 
 End SystemOperations.
-
-
-(** We define various ways in which systems of contracts can be considered equivalent *)
-Section ContractSystemEquivalence.
-
-(** "strong equivalence" : bit by bit equivalence component morphisms which 
-    mimics the data structure of the system of contracts : graph equivalence *)
-Section StrongEquivalence.
-
-Definition sys_eq (sys1 sys2 : ContractSystem) : Prop := 
-    constr_permutation GeneralizedContract sys1 sys2.
-
-End StrongEquivalence.
-
-
-(** "weak equivalence" : there is an "equivalence of meta-contracts" *)
-(* - another chained list that captures evolving state for weak morphisms *)
-Section Isomorphic.
-
-Definition wc_iso (W1 W2 : WeakContract) : Prop := todo.
-
-Record gc_iso (G1 G2 : GeneralizedContract) := {
-    gc_addr_iso : addr G1 = addr G2 ;
-    gc_wc_iso : wc_iso (wc G1) (wc G2) ;
-}.
-
-Definition gc_iso_op (g1 g2 : option GeneralizedContract) : Prop := 
-    match g1 with 
-    | Some G1 => 
-        match g2 with | Some G2 => gc_iso G1 G2 | None => False end 
-    | None => False 
-    end.
-
-Definition sys_weq (sys1 sys2 : ContractSystem) : Prop := 
-    forall place,
-    gc_iso_op (constr_find GeneralizedContract place sys1) (constr_find GeneralizedContract place sys2).
-
-End Isomorphic.
-
-
-(** Systems of contracts are equivalent by bisimulation *)
-Section Bisimulation.
-
-(** The notion of a system's trace *)
-Section SystemTrace.
-Record SystemStep (sys : ContractSystem) (st1 st2 : GeneralizedState) := {
-    sys_chain : Chain ; 
-    sys_ctx : ContractCallContext ; 
-    sys_gst : GeneralizedState ;
-    sys_gmsg : GeneralizedMsg ; 
-    sys_new_acts : list ActionBody ;
-    (* receive is called successfully *)
-    sys_recv_some : gen_receive sys sys_chain sys_ctx sys_gst sys_gmsg = Ok (st2, sys_new_acts) ;
-}.
-
-Definition SystemTrace (sys : ContractSystem) :=
-    ChainedList GeneralizedState (SystemStep sys).
-
-(** Morphism of system traces *)
-Record SystemTraceMorphism (sys1 sys2 : ContractSystem) := 
-    build_st_morph {
-        (* state morphs, parameterized by states *)
-        st_gstate_morph : GeneralizedState -> GeneralizedState ;
-        (* init morph *)
-
-        (* step *)
-        sysstep_morph : forall gstate1 gstate2,
-            SystemStep sys1 gstate1 gstate2 -> 
-            SystemStep sys2 (st_gstate_morph gstate1) (st_gstate_morph gstate2) ;
-    }.
-
-
-Record AccumTraceMorphism (sys1 sys2 : ContractSystem) := 
-    build_compressed_st_morph {
-        (* state morph *)
-        st_state_morph : SerializedValue -> SerializedValue ; 
-        (* init *)
-        (* step *)
-        c_sysstep_morph : forall gstate1 gstate2,
-    }.
-
-End SystemTrace.
-
-End Bisimulation.
-
-
-End ContractSystemEquivalence.
 
 
 (** An API to go from (strong) contracts to a contract system *)
@@ -284,7 +298,7 @@ Section ContractToSystem.
 
 
 
-End ContractSystem.
+End ContractToSystem.
 
 
 
@@ -327,3 +341,6 @@ Section MultiChainContractSystemMorphism.
 
 
 End MultiChainContractSystemMorphism.
+
+
+End ContractSystem.
